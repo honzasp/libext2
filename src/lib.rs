@@ -1,0 +1,2 @@
+#![feature(fnbox)]
+mod future;
