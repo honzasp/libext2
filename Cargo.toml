@@ -2,3 +2,6 @@
 name = "ext2"
 version = "0.0.1"
 authors = []
+
+[dependencies]
+fuse = "0.2"
