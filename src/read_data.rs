@@ -1,11 +1,13 @@
 use std::{cmp};
-use error::{Error, Result};
-use ino::{Context, Inode};
-use ino::integer::{read_u32};
+use context::{Context};
+use error::{Result, Error};
+use inode::{Inode};
+use read_int::{read_u32};
 
-pub struct DataReader<'c> {
+pub struct ReadData<'c> {
   ctx: &'c Context,
   block: [u32; 15],
+  size: u64,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -17,30 +19,32 @@ enum BlockPos {
   OutOfRange,
 }
 
-impl<'c> DataReader<'c> {
-  pub fn new(ctx: &'c Context, inode: &Inode) -> DataReader<'c> {
-    DataReader { ctx: ctx, block: inode.block }
+impl<'c> ReadData<'c> {
+  pub fn new(ctx: &'c Context, inode: &Inode) -> ReadData<'c> {
+    ReadData { ctx: ctx, block: inode.block, size: inode.size }
   }
 
-  pub fn read(&mut self, offset: u64, buffer: &mut [u8]) -> Result<()> {
+  pub fn read(&mut self, offset: u64, buffer: &mut [u8]) -> Result<u64> {
     let block_size = self.ctx.block_size();
+    let max_length = cmp::min(buffer.len() as u64, self.size - offset);
     let mut chunk_begin = 0;
-    while chunk_begin < buffer.len() as u64 {
+    while chunk_begin < max_length {
       let chunk_block = (offset + chunk_begin) / block_size;
       let chunk_offset = (offset + chunk_begin) % block_size;
-      let chunk_length = cmp::min(buffer.len() as u64 - chunk_begin,
+      let chunk_length = cmp::min(max_length - chunk_begin,
           block_size - chunk_offset);
       try!(self.read_file_block(chunk_block, chunk_offset,
             &mut (buffer[chunk_begin as usize ..])[0..chunk_length as usize]));
       chunk_begin = chunk_begin + chunk_length;
     }
-    Ok(())
+    Ok(chunk_begin)
   }
 
-  pub fn read_file_block(&mut self, file_block: u64, offset: u64, buffer: &mut [u8])
-    -> Result<()>
+  pub fn read_file_block(&mut self, file_block: u64,
+    offset: u64, buffer: &mut [u8]) -> Result<()>
   {
-    assert!(offset + buffer.len() as u64 <= self.ctx.block_size());
+    let block_size = self.ctx.block_size();
+    assert!(offset + buffer.len() as u64 <= block_size);
 
     let real_block = match self.file_block_to_pos(file_block) {
       BlockPos::Level0(level0) =>

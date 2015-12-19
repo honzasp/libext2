@@ -1,5 +1,5 @@
-use ino::integer::{read_u16, read_u32};
 use error::{Error, Result};
+use read_int::{read_u16, read_u32};
 
 #[derive(Debug)]
 pub struct Superblock {
@@ -7,6 +7,7 @@ pub struct Superblock {
   pub log_block_size: u32,
   pub blocks_per_group: u32,
   pub inodes_per_group: u32,
+  pub rev_level: u32,
   pub first_ino: u32,
   pub inode_size: u16,
   pub feature_compat: u32,
@@ -67,6 +68,7 @@ impl Superblock {
       log_block_size: read_u32(&bytes[24..]),
       blocks_per_group: read_u32(&bytes[32..]),
       inodes_per_group: read_u32(&bytes[40..]),
+      rev_level: rev,
       first_ino: if rev >= 1 { read_u32(&bytes[84..]) } else { 11 },
       inode_size: if rev >= 1 { read_u16(&bytes[88..]) } else { 128 },
       feature_compat: feature_compat,
