@@ -1,5 +1,8 @@
-#![feature(fnbox)]
+#![allow(dead_code)]
 extern crate fuse;
 
-mod future;
-mod fuse_fs;
+pub use error::{Error, Result};
+
+pub mod ino;
+pub mod block_read;
+pub mod error;

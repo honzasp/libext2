@@ -1,6 +1,6 @@
-pub struct FuseFS;
+pub struct Fuse;
 
-impl fuse::Filesystem for FuseFS {
+impl fuse::Filesystem for Fuse {
   fn lookup(&mut self, _req: &fuse::Request,
     parent_ino: u64, name: &Path, reply: fuse::ReplyEntry)
   {
