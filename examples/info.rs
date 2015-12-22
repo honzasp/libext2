@@ -4,19 +4,33 @@ use std::{error, fs, str};
 fn mein() -> Result<(), ext2::Error> {
   let file = try!(fs::File::open("test.ext2"));
   let reader = ext2::FileReader(file);
-  let context = try!(ext2::Context::new(Box::new(reader)));
-  println!("{:?}", context.superblock());
+  let mut fs = try!(ext2::Filesystem::new(Box::new(reader)));
 
-  let inode = try!(context.read_inode(7329));
-  println!("{:?}", inode);
+  let root_inode = try!(fs.read_inode(ext2::Filesystem::ROOT_INO));
+  println!("{:?}", root_inode);
 
-  let mut cursor = try!(ext2::read_dir::init_cursor(&context, &inode));
-  while let Some(entry) =
-    try!(ext2::read_dir::advance_cursor(&context, &mut cursor)) 
-  {
-    let name = str::from_utf8(&entry.name[..]).unwrap();
-    println!("  entry {:?} {:?}", name, entry);
+  let mut root_handle = try!(fs.dir_open(root_inode));
+  while let Some(line) = try!(fs.dir_read(&mut root_handle)) {
+    println!("  {:?}: {}", line, str::from_utf8(&line.name[..]).unwrap());
   }
+
+  let dir_ino = try!(fs.dir_lookup(root_inode, b"totem_destroyer")).unwrap();
+  let dir_inode = try!(fs.read_inode(dir_ino));
+  println!("{:?}", dir_inode);
+
+  let mut dir_handle = try!(fs.dir_open(dir_inode));
+  while let Some(line) = try!(fs.dir_read(&mut dir_handle)) {
+    println!("  {:?}: {}", line, str::from_utf8(&line.name[..]).unwrap());
+  }
+
+  let hello_ino = try!(fs.dir_lookup(root_inode, b"hello.txt")).unwrap();
+  let hello_inode = try!(fs.read_inode(hello_ino));
+  println!("{:?}", hello_inode);
+  let mut hello_handle = try!(fs.file_open(hello_inode));
+  let mut buffer: Vec<u8> = (0..hello_inode.size).map(|_| 0).collect();
+  let length = try!(fs.file_read(&mut hello_handle, 0, &mut buffer[..]));
+  buffer.truncate(length as usize);
+  println!("{:?}", str::from_utf8(&buffer[..]).unwrap());
 
   Ok(())
 }

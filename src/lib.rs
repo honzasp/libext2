@@ -1,22 +1,15 @@
-#![allow(dead_code)]
+#![feature(associated_consts)]
 extern crate fuse;
+extern crate libc;
+extern crate time;
 
-pub use context::{Context};
-pub use superblock::{Superblock};
-pub use group_desc::{GroupDesc};
-pub use inode::{Inode};
-pub use dir_entry::{DirEntry};
+pub use defs::*;
 pub use error::{Error, Result};
+pub use filesystem::{Filesystem};
 pub use read_raw::{ReadRaw, FileReader};
 
-pub mod context;
-pub mod superblock;
-pub mod group_desc;
-pub mod inode;
-pub mod dir_entry;
-
-pub mod error;
-pub mod read_file;
-pub mod read_dir;
-pub mod read_raw;
-    mod read_int;
+mod decode;
+mod defs;
+mod error;
+mod filesystem;
+mod read_raw;

@@ -5,6 +5,8 @@ authors = []
 
 [dependencies]
 fuse = "0.2"
+time = "0.1"
+libc = "0.2"
 
 [dev-dependencies]
 docopt = "0.6"
