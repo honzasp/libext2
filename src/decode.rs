@@ -91,6 +91,7 @@ pub fn decode_inode(superblock: &Superblock, bytes: &[u8]) -> Result<Inode> {
     links_count: decode_u16(&bytes[26..]),
     flags: decode_u32(&bytes[32..]),
     block: block,
+    file_acl: decode_u32(&bytes[104..]),
   })
 }
 

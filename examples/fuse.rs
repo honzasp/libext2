@@ -63,11 +63,18 @@ impl fuse::Filesystem for Fuse {
     }
   }
 
-  /*
   fn readlink(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyData) {
-    reply.error(65)
+    println!("readlink (ino {})", ino);
+    let res: Result<_, ext2::Error> = (|| {
+      let inode = try!(self.fs.read_inode(ext2_ino(ino)));
+      self.fs.link_read(inode)
+    })();
+
+    match res {
+      Err(_err) => reply.error(65),
+      Ok(path) => reply.data(&path[..]),
+    }
   }
-  */
 
   fn open(&mut self, _req: &fuse::Request, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
     println!("open (ino {})", ino);

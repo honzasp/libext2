@@ -57,6 +57,7 @@ pub struct Inode {
   pub links_count: u16,
   pub flags: u32,
   pub block: [u32; 15],
+  pub file_acl: u32,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

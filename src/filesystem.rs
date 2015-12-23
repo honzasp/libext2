@@ -1,6 +1,7 @@
 use std::{cmp, iter};
 use defs::*;
 use decode;
+use encode;
 use error::{Error, Result};
 use read_raw::{ReadRaw};
 
@@ -149,10 +150,29 @@ impl Filesystem {
   }
 
   pub fn link_read(&mut self, inode: Inode) -> Result<Vec<u8>> {
-    let mut buffer = make_buffer(inode.size);
-    let length = try!(self.read_file_data(&inode, 0, &mut buffer[..]));
-    buffer.truncate(length as usize);
-    Ok(buffer)
+    if inode.file_type == FileType::Symlink {
+      let fast_symlink =
+        if inode.file_acl != 0 {
+          inode.size_512 as u64 == self.block_size() / 512 
+        } else {
+          inode.size_512 == 0
+        };
+      let mut buffer = make_buffer(inode.size + 4);
+
+      let length = 
+        if fast_symlink {
+          for i in 0..cmp::min(inode.block.len(), inode.size as usize / 4 + 1) {
+            encode::encode_u32(&mut buffer[4*i..], inode.block[i]);
+          }
+          inode.size
+        } else {
+          try!(self.read_file_data(&inode, 0, &mut buffer[..]))
+        };
+      buffer.truncate(length as usize);
+      Ok(buffer)
+    } else {
+      Err(Error::new(format!("inode is not a symlink")))
+    }
   }
 
   fn read_file_data(&mut self, inode: &Inode, 

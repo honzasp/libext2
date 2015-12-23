@@ -5,6 +5,7 @@ pub use filesystem::{Filesystem, DirHandle, FileHandle};
 pub use read_raw::{ReadRaw, FileReader};
 
 mod decode;
+mod encode;
 mod defs;
 mod error;
 mod filesystem;
