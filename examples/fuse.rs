@@ -3,7 +3,7 @@ extern crate fuse;
 extern crate libc;
 extern crate time;
 
-use std::{error, fs, path};
+use std::{error, fs, iter, path};
 use std::collections::{HashMap};
 use std::os::unix::ffi::{OsStrExt};
 use std::ffi::{OsStr};
@@ -13,11 +13,6 @@ struct Fuse {
   dir_handles: HashMap<u64, ext2::DirHandle>,
   file_handles: HashMap<u64, ext2::FileHandle>,
   next_fh: u64,
-}
-
-enum Handle {
-  Dir(ext2::DirHandle),
-  File(ext2::FileHandle),
 }
 
 impl Fuse {
@@ -38,6 +33,8 @@ impl fuse::Filesystem for Fuse {
   fn lookup(&mut self, _req: &fuse::Request,
     parent_ino: u64, name: &path::Path, reply: fuse::ReplyEntry)
   {
+    println!("lookup (ino {}, name {:?})", parent_ino, 
+             &name.to_string_lossy());
     let res: Result<_, ext2::Error> = (|| {
       let parent_inode = try!(self.fs.read_inode(ext2_ino(parent_ino)));
       let entry = try!(self.fs.dir_lookup(
@@ -70,34 +67,61 @@ impl fuse::Filesystem for Fuse {
   fn readlink(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyData) {
     reply.error(65)
   }
+  */
 
   fn open(&mut self, _req: &fuse::Request, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
-    reply.error(65)
+    println!("open (ino {})", ino);
+    let res: Result<_, ext2::Error> = (|| {
+      let inode = try!(self.fs.read_inode(ext2_ino(ino)));
+      let handle = try!(self.fs.file_open(inode));
+      self.file_handles.insert(self.next_fh, handle);
+      self.next_fh += 1;
+      Ok(self.next_fh - 1)
+    })();
+
+    match res {
+      Err(_err) => reply.error(65),
+      Ok(fh) => reply.opened(fh, 0),
+    }
   }
 
-  fn read(&mut self, _req: &fuse::Request, ino: u64, fh: u64,
+  fn read(&mut self, _req: &fuse::Request, _ino: u64, fh: u64,
     offset: u64, size: u32, reply: fuse::ReplyData)
   {
-    reply.error(65)
+    println!("read (ino {}, fh {}, offset {}, size {})", _ino, fh, offset, size);
+    let res: Result<_, ext2::Error> = (|| {
+      let handle = try!(self.file_handles.get_mut(&fh)
+          .ok_or_else(|| ext2::Error::new(format!("Bad file handle"))));
+      let mut buffer: Vec<u8> = iter::repeat(0).take(size as usize).collect();
+      let length = try!(self.fs.file_read(handle, offset, &mut buffer[..]));
+      buffer.truncate(length as usize);
+      Ok(buffer)
+    })();
+
+    match res {
+      Err(_err) => reply.error(65),
+      Ok(data) => reply.data(&data[..]),
+    }
   }
 
-  fn release(&mut self, _req: &fuse::Request, ino: u64, fh: u64,
-    flags: u32, lock_owner: u64, flush: bool, reply: fuse::ReplyEmpty)
+  fn release(&mut self, _req: &fuse::Request, _ino: u64, fh: u64,
+    _flags: u32, _lock_owner: u64, _flush: bool, reply: fuse::ReplyEmpty)
   {
-    reply.error(65)
+    println!("release (ino {}, fh {})", _ino, fh);
+    self.dir_handles.remove(&fh);
+    reply.ok();
   }
-  */
 
   fn opendir(&mut self, _req: &fuse::Request, ino: u64,
     flags: u32, reply: fuse::ReplyOpen)
   {
+    println!("opendir (ino {})", ino);
     let res: Result<_, ext2::Error> = (|| {
-      let fh = self.next_fh;
-      self.next_fh += 1;
       let dir_inode = try!(self.fs.read_inode(ext2_ino(ino)));
       let dir_handle = try!(self.fs.dir_open(dir_inode));
-      self.dir_handles.insert(fh, dir_handle);
-      Ok(fh)
+      self.dir_handles.insert(self.next_fh, dir_handle);
+      self.next_fh += 1;
+      Ok(self.next_fh - 1)
     })();
 
     match res {
@@ -109,6 +133,7 @@ impl fuse::Filesystem for Fuse {
   fn readdir(&mut self, _req: &fuse::Request, ino: u64, fh: u64,
     offset: u64, mut reply: fuse::ReplyDirectory)
   {
+    println!("readdir (ino {}, fh {}, offset {})", ino, fh, offset);
     let res: Result<_, ext2::Error> = (|| {
       let handle = try!(self.dir_handles.get_mut(&fh)
           .ok_or_else(|| ext2::Error::new(format!("Bad dir handle"))));
@@ -132,6 +157,7 @@ impl fuse::Filesystem for Fuse {
   fn releasedir(&mut self, _req: &fuse::Request, _ino: u64, fh: u64,
     _flags: u32, reply: fuse::ReplyEmpty)
   {
+    println!("releasedir (ino {}, fh {})", _ino, fh);
     self.dir_handles.remove(&fh);
     reply.ok();
   }
