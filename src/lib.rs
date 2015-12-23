@@ -1,11 +1,7 @@
 #![feature(associated_consts)]
-extern crate fuse;
-extern crate libc;
-extern crate time;
-
 pub use defs::*;
 pub use error::{Error, Result};
-pub use filesystem::{Filesystem};
+pub use filesystem::{Filesystem, DirHandle, FileHandle};
 pub use read_raw::{ReadRaw, FileReader};
 
 mod decode;
