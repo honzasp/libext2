@@ -3,10 +3,10 @@ use defs::*;
 use decode;
 use encode;
 use error::{Error, Result};
-use read_raw::{ReadRaw};
+use volume::{Volume};
 
 pub struct Filesystem {
-  reader: Box<ReadRaw>,
+  volume: Box<Volume>,
   superblock: Superblock,
 }
 
@@ -42,11 +42,11 @@ enum BlockPos {
 impl Filesystem {
   pub const ROOT_INO: u64 = 2;
 
-  pub fn new(mut reader: Box<ReadRaw>) -> Result<Filesystem> {
+  pub fn new(mut volume: Box<Volume>) -> Result<Filesystem> {
     let mut superblock_buf = make_buffer(1024);
-    try!(reader.read(1024, &mut superblock_buf[..]));
+    try!(volume.read(1024, &mut superblock_buf[..]));
     let superblock = try!(decode::decode_superblock(&superblock_buf[..], true));
-    Ok(Filesystem { reader: reader, superblock: superblock })
+    Ok(Filesystem { volume: volume, superblock: superblock })
   }
 
   pub fn read_inode(&mut self, ino: u64) -> Result<Inode> {
@@ -58,7 +58,7 @@ impl Filesystem {
         + local_idx * inode_size;
 
     let mut inode_buf = make_buffer(inode_size);
-    try!(self.reader.read(offset, &mut inode_buf[..]));
+    try!(self.volume.read(offset, &mut inode_buf[..]));
     decode::decode_inode(&self.superblock, &inode_buf[..])
   }
 
@@ -66,7 +66,7 @@ impl Filesystem {
     let group_desc_block = self.superblock.first_data_block as u64 + 1;
     let offset = group_desc_block * self.block_size() + group_idx * 32;
     let mut desc_buf = make_buffer(32);
-    try!(self.reader.read(offset, &mut desc_buf[..]));
+    try!(self.volume.read(offset, &mut desc_buf[..]));
     decode::decode_group_desc(&self.superblock, &desc_buf[..])
   }
 
@@ -222,14 +222,14 @@ impl Filesystem {
     };
 
     let block_offset = real_block * self.block_size() + offset;
-    self.reader.read(block_offset, buffer)
+    self.volume.read(block_offset, buffer)
   }
 
   fn read_indirect(&mut self, indirect_block: u64, entry: u64) -> Result<u64> {
     let mut buffer = [0; 4];
     let entry_offset = indirect_block * self.block_size() + entry * 4;
     assert!(entry < self.block_size() / 4);
-    try!(self.reader.read(entry_offset, &mut buffer[..]));
+    try!(self.volume.read(entry_offset, &mut buffer[..]));
     Ok(decode::decode_u32(&buffer[..]) as u64)
   }
 

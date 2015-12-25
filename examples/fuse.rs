@@ -28,7 +28,6 @@ impl Fuse {
 
 const TTL: time::Timespec = time::Timespec { sec: 1, nsec: 0 };
 
-#[allow(unused_variables)]
 impl fuse::Filesystem for Fuse {
   fn lookup(&mut self, _req: &fuse::Request,
     parent_ino: u64, name: &path::Path, reply: fuse::ReplyEntry)
@@ -76,7 +75,9 @@ impl fuse::Filesystem for Fuse {
     }
   }
 
-  fn open(&mut self, _req: &fuse::Request, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
+  fn open(&mut self, _req: &fuse::Request, ino: u64,
+    _flags: u32, reply: fuse::ReplyOpen) 
+  {
     println!("open (ino {})", ino);
     let res: Result<_, ext2::Error> = (|| {
       let inode = try!(self.fs.read_inode(ext2_ino(ino)));
@@ -120,7 +121,7 @@ impl fuse::Filesystem for Fuse {
   }
 
   fn opendir(&mut self, _req: &fuse::Request, ino: u64,
-    flags: u32, reply: fuse::ReplyOpen)
+    _flags: u32, reply: fuse::ReplyOpen)
   {
     println!("opendir (ino {})", ino);
     let res: Result<_, ext2::Error> = (|| {
@@ -172,8 +173,8 @@ impl fuse::Filesystem for Fuse {
 
 fn mein() -> Result<(), ext2::Error> {
   let file = try!(fs::File::open("test.ext2"));
-  let reader = ext2::FileReader(file);
-  let fs = try!(ext2::Filesystem::new(Box::new(reader)));
+  let volume = ext2::FileVolume(file);
+  let fs = try!(ext2::Filesystem::new(Box::new(volume)));
   let fuse = Fuse::new(fs);
   fuse::mount(fuse, &"/tmp/test", &[]);
   Ok(())

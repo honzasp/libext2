@@ -2,11 +2,11 @@
 pub use defs::*;
 pub use error::{Error, Result};
 pub use filesystem::{Filesystem, DirHandle, FileHandle};
-pub use read_raw::{ReadRaw, FileReader};
+pub use volume::{Volume, FileVolume};
 
 mod decode;
 mod encode;
 mod defs;
 mod error;
 mod filesystem;
-mod read_raw;
+mod volume;

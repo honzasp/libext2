@@ -3,8 +3,8 @@ use std::{error, fs, str};
 
 fn mein() -> Result<(), ext2::Error> {
   let file = try!(fs::File::open("test.ext2"));
-  let reader = ext2::FileReader(file);
-  let mut fs = try!(ext2::Filesystem::new(Box::new(reader)));
+  let volume = ext2::FileVolume(file);
+  let mut fs = try!(ext2::Filesystem::new(Box::new(volume)));
 
   let root_inode = try!(fs.read_inode(ext2::Filesystem::ROOT_INO));
   println!("{:?}", root_inode);
