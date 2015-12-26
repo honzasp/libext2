@@ -1,40 +1,22 @@
 #![feature(associated_consts)]
 pub use defs::*;
 pub use error::{Error, Result};
-pub use filesystem::{Filesystem};
 pub use volume::{Volume, FileVolume};
+pub use fs::{Filesystem, mount_fs};
+pub use inode::{read_inode};
+pub use dir::{DirHandle, lookup_dir, open_dir, read_dir, close_dir};
+pub use file::{FileHandle, open_file, read_file, write_file, close_file};
+pub use link::{read_link};
 
-pub mod fs {
-  pub use filesystem::new as mount;
-}
-
-pub mod inode {
-  pub use filesystem::read_inode as read;
-}
-
-pub mod dir {
-  pub use filesystem::DirHandle as Handle;
-  pub use filesystem::dir_lookup as lookup;
-  pub use filesystem::dir_open as open;
-  pub use filesystem::dir_read as read;
-  pub use filesystem::dir_close as close;
-}
-
-pub mod file {
-  pub use filesystem::FileHandle as Handle;
-  pub use filesystem::file_open as open;
-  pub use filesystem::file_read as read;
-  pub use filesystem::file_write as write;
-  pub use filesystem::file_close as close;
-}
-
-pub mod link {
-  pub use filesystem::link_read as read;
-}
-
+mod block_alloc;
 mod decode;
-mod encode;
 mod defs;
+mod dir;
+mod encode;
 mod error;
-mod filesystem;
+mod file;
+mod fs;
+mod inode;
+mod link;
+mod prelude;
 mod volume;
