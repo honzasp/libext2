@@ -31,6 +31,7 @@ pub fn decode_superblock(bytes: &[u8], read_only: bool) -> Result<Superblock> {
   }
 
   Ok(Superblock {
+    blocks_count: decode_u32(&bytes[4..]),
     first_data_block: decode_u32(&bytes[20..]),
     log_block_size: decode_u32(&bytes[24..]),
     blocks_per_group: decode_u32(&bytes[32..]),
@@ -53,7 +54,7 @@ pub fn decode_group_desc(_superblock: &Superblock, bytes: &[u8]) -> Result<Group
   })
 }
 
-pub fn decode_inode(superblock: &Superblock, bytes: &[u8]) -> Result<Inode> {
+pub fn decode_inode(superblock: &Superblock, ino: u64, bytes: &[u8]) -> Result<Inode> {
   assert!(bytes.len() >= 128);
   let mode = decode_u16(&bytes[0..]);
   let file_type = try!(decode_inode_file_type(mode));
@@ -73,13 +74,15 @@ pub fn decode_inode(superblock: &Superblock, bytes: &[u8]) -> Result<Inode> {
 
   let mut block = [0; 15];
   for i in 0..15 {
-    block[i] = decode_u32(&bytes[40 + 4*i ..])
+    block[i] = decode_u32(&bytes[40 + 4*i..])
   }
 
   Ok(Inode {
+    ino: ino,
     file_type: file_type,
     suid: (mode & 0x0800) != 0,
     sgid: (mode & 0x0400) != 0,
+    sticky: (mode & 0x0200) != 0,
     access_rights: AccessRights(mode & 0x01ff),
     uid: uid_low + (uid_high << 16),
     gid: gid_low + (gid_high << 16),

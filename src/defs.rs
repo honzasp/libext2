@@ -1,5 +1,6 @@
 #[derive(Debug, Copy, Clone)]
 pub struct Superblock {
+  pub blocks_count: u32,
   pub first_data_block: u32,
   pub log_block_size: u32,
   pub blocks_per_group: u32,
@@ -43,9 +44,11 @@ pub struct GroupDesc {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Inode {
+  pub ino: u64,
   pub file_type: FileType,
   pub suid: bool,
   pub sgid: bool,
+  pub sticky: bool,
   pub access_rights: AccessRights,
   pub uid: u32,
   pub gid: u32,

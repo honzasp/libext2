@@ -41,7 +41,7 @@ impl fuse::Filesystem for Fuse {
       Ok(match entry {
         Some(entry_ino) => {
           let entry_inode = try!(self.fs.read_inode(entry_ino));
-          Some(inode_to_file_attr(entry_ino, &entry_inode))
+          Some(inode_to_file_attr(&entry_inode))
         },
         None => None,
       })
@@ -58,7 +58,7 @@ impl fuse::Filesystem for Fuse {
     println!("getattr (ino {})", ino);
     match self.fs.read_inode(ext2_ino(ino)) {
       Err(_err) => reply.error(65),
-      Ok(inode) => reply.attr(&TTL, &inode_to_file_attr(ext2_ino(ino), &inode)),
+      Ok(inode) => reply.attr(&TTL, &inode_to_file_attr(&inode)),
     }
   }
 
@@ -109,6 +109,23 @@ impl fuse::Filesystem for Fuse {
     match res {
       Err(_err) => reply.error(65),
       Ok(data) => reply.data(&data[..]),
+    }
+  }
+
+  fn write(&mut self, _req: &fuse::Request, _ino: u64, fh: u64, offset: u64,
+    data: &[u8], _flags: u32, reply: fuse::ReplyWrite)
+  {
+    println!("write (ino {}, fh {}, offset {}, size {})", _ino, fh, offset, data.len());
+    let res: Result<_, ext2::Error> = (|| {
+      let handle = try!(self.file_handles.get_mut(&fh)
+          .ok_or_else(|| ext2::Error::new(format!("Bad file handle"))));
+      let length = try!(self.fs.file_write(handle, offset, data));
+      Ok(length)
+    })();
+
+    match res {
+      Err(_err) => { println!("{:?}", _err); reply.error(65) },
+      Ok(length) => reply.written(length as u32),
     }
   }
 
@@ -172,7 +189,8 @@ impl fuse::Filesystem for Fuse {
 }
 
 fn mein() -> Result<(), ext2::Error> {
-  let file = try!(fs::File::open("test.ext2"));
+  let file = try!(fs::OpenOptions::new()
+      .read(true).write(true).open("test.ext2"));
   let volume = ext2::FileVolume(file);
   let fs = try!(ext2::Filesystem::new(Box::new(volume)));
   let fuse = Fuse::new(fs);
@@ -203,9 +221,9 @@ fn fuse_ino(ext2_ino: u64) -> u64 {
   if ext2_ino == ext2::Filesystem::ROOT_INO { 1 } else { ext2_ino }
 }
 
-fn inode_to_file_attr(ext2_ino: u64, inode: &ext2::Inode) -> fuse::FileAttr {
+fn inode_to_file_attr(inode: &ext2::Inode) -> fuse::FileAttr {
   fuse::FileAttr {
-    ino: fuse_ino(ext2_ino),
+    ino: inode.ino,
     size: inode.size,
     blocks: inode.size_512 as u64,
     atime: fuse_timespec(inode.atime),
