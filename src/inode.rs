@@ -1,15 +1,40 @@
 use std::{cmp};
 use prelude::*;
 
-pub fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
+pub fn get_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
+  match fs.inodes.get(&ino) {
+    Some(inode) => return Ok(inode.clone()),
+    None => (),
+  }
+  let inode = try!(read_inode(fs, ino));
+  fs.inodes.insert(ino, inode.clone());
+  Ok(inode)
+}
+
+pub fn update_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
+  fs.inodes.insert(inode.ino, inode.clone());
+  fs.dirty_inos.insert(inode.ino);
+  Ok(())
+}
+
+pub fn flush_ino(fs: &mut Filesystem, ino: u64) -> Result<()> {
+  if let Some(inode) = fs.inodes.remove(&ino) {
+    if fs.dirty_inos.remove(&ino) {
+      return write_inode(fs, &inode);
+    }
+  }
+  Ok(())
+}
+
+fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
   let (offset, inode_size) = try!(locate_inode(fs, ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(fs.volume.read(offset, &mut inode_buf[..]));
   decode_inode(&fs.superblock, ino, &inode_buf[..])
 }
 
-pub fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
-  println!("write_inode {:?}", inode);
+fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
+  println!("write_inode {}: {:?}", inode.ino, inode);
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
@@ -19,9 +44,8 @@ pub fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
 fn locate_inode(fs: &mut Filesystem, ino: u64) -> Result<(u64, u64)> {
   let (group_idx, local_idx) = get_ino_group(fs, ino);
   let inode_size = fs.superblock.inode_size as u64;
-  let group_desc = try!(read_group_desc(fs, group_idx));
-  let offset = group_desc.inode_table as u64 * fs.block_size() 
-      + local_idx * inode_size;
+  let inode_table = fs.groups[group_idx as usize].desc.inode_table as u64;
+  let offset = inode_table * fs.block_size() + local_idx * inode_size;
   Ok((offset, inode_size))
 }
 
@@ -76,8 +100,6 @@ fn read_indirect(fs: &mut Filesystem, indirect_block: u64, entry: u64) -> Result
 pub fn write_inode_data(fs: &mut Filesystem, inode: &mut Inode,
   offset: u64, buffer: &[u8]) -> Result<u64>
 {
-  println!(".write_inode_data(ino {}, offset {}, len {})",
-    inode.ino, offset, buffer.len());
   let block_size = fs.block_size();
   let mut chunk_begin = 0;
   while chunk_begin < buffer.len() as u64 {
@@ -92,7 +114,7 @@ pub fn write_inode_data(fs: &mut Filesystem, inode: &mut Inode,
 
   if inode.size < offset + chunk_begin {
     inode.size = offset + chunk_begin;
-    try!(write_inode(fs, inode));
+    try!(update_inode(fs, inode));
   }
 
   Ok(chunk_begin)
@@ -101,8 +123,6 @@ pub fn write_inode_data(fs: &mut Filesystem, inode: &mut Inode,
 fn write_inode_block(fs: &mut Filesystem, inode: &mut Inode, inode_block: u64,
   offset: u64, buffer: &[u8]) -> Result<()>
 {
-  println!(".write_inode_block(ino {}, inode_block {}, offset {}, len {})",
-    inode.ino, inode_block, offset, buffer.len());
   assert!(offset + buffer.len() as u64 <= fs.block_size());
   let real_block = match try!(get_inode_block(fs, inode, inode_block)) {
     Some(block) => block,
@@ -112,8 +132,6 @@ fn write_inode_block(fs: &mut Filesystem, inode: &mut Inode, inode_block: u64,
       block
     }
   };
-  println!("write ino {}, inode_block {} => block {}",
-            inode.ino, inode_block, real_block);
   let block_offset = real_block * fs.block_size() + offset;
   fs.volume.write(block_offset, buffer)
 }
@@ -130,16 +148,18 @@ fn write_indirect(fs: &mut Filesystem, indirect_block: u64,
 
 
 fn alloc_inode_block(fs: &mut Filesystem, inode: &mut Inode) -> Result<u64> {
-  println!(".alloc_inode_block(ino {})", inode.ino);
   let (inode_group_idx, _) = get_ino_group(fs, inode.ino);
   match try!(alloc_block(fs, inode_group_idx)) {
-    Some(block) => Ok(block),
+    Some(block) => {
+      inode.size_512 += (fs.block_size() / 512) as u32;
+      try!(update_inode(fs, inode));
+      Ok(block)
+    },
     None => Err(Error::new(format!("No free blocks remain for files"))),
   }
 }
 
 fn alloc_indirect_block(fs: &mut Filesystem, inode: &mut Inode) -> Result<u64> {
-  println!(".alloc_indirect_block(ino {})", inode.ino);
   let (inode_group_idx, _) = get_ino_group(fs, inode.ino);
   let block = match try!(alloc_block(fs, inode_group_idx)) {
     Some(block) => block,
@@ -147,13 +167,18 @@ fn alloc_indirect_block(fs: &mut Filesystem, inode: &mut Inode) -> Result<u64> {
         format!("No free blocks remain for indirections"))),
   };
 
+  inode.size_512 += (fs.block_size() / 512) as u32;
+  try!(update_inode(fs, inode));
+
   let zeros = make_buffer(fs.block_size());
   let offset = block * fs.block_size();
   try!(fs.volume.write(offset, &zeros[..]));
   Ok(block)
 }
 
-fn get_inode_block(fs: &mut Filesystem, inode: &Inode, inode_block: u64) -> Result<Option<u64>> {
+fn get_inode_block(fs: &mut Filesystem, inode: &Inode,
+  inode_block: u64) -> Result<Option<u64>> 
+{
   Ok(Some(match inode_block_to_pos(fs, inode_block) {
     BlockPos::Level0(level0) => {
       let block0 = inode.block[level0 as usize] as u64;
@@ -192,9 +217,6 @@ fn get_inode_block(fs: &mut Filesystem, inode: &Inode, inode_block: u64) -> Resu
 fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
   inode_block: u64, block: u64) -> Result<()> 
 {
-  println!(".set_inode_block(ino {}, inode_block {}, block {})",
-    inode.ino, inode_block, block);
-
   if let Some(prev_block) = try!(get_inode_block(fs, inode, inode_block)) {
     panic!("inode {}, file block {}: tried to overwrite block {} with {}",
             inode.ino, inode_block, prev_block, block);
@@ -205,7 +227,9 @@ fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
   {
     if inode.block[idx as usize] == 0 {
       inode.block[idx as usize] = try!(alloc_indirect_block(fs, inode)) as u32;
-      try!(write_inode(fs, inode));
+      println!("allocate indirect block {} for direct block {} in inode",
+               inode.block[idx as usize], idx);
+      try!(update_inode(fs, inode));
     }
     Ok(inode.block[idx as usize] as u64)
   };
@@ -217,6 +241,8 @@ fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
     if old_block == 0 {
       let new_block = try!(alloc_indirect_block(fs, inode));
       try!(write_indirect(fs, indirect, entry, new_block));
+      println!("allocate indirect block {} for entry {} in indirect block {}",
+               new_block, entry, indirect);
       Ok(new_block)
     } else {
       Ok(old_block)
@@ -226,7 +252,7 @@ fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
   match inode_block_to_pos(fs, inode_block) {
     BlockPos::Level0(level0) => {
       inode.block[level0 as usize] = block as u32;
-      try!(write_inode(fs, inode));
+      try!(update_inode(fs, inode));
     },
     BlockPos::Level1(level0) => {
       let block1 = try!(inode_indirect(fs, inode, 12));
@@ -248,13 +274,7 @@ fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
           format!("File block {} is out of range for writing", inode_block))),
   }
 
-  let min_size_512 = ((inode_block + 1) * fs.block_size() / 512) as u32;
-  if inode.size_512 < min_size_512 {
-    inode.size_512 = min_size_512;
-    write_inode(fs, inode)
-  } else {
-    Ok(())
-  }
+  Ok(())
 }
 
 fn inode_block_to_pos(fs: &Filesystem, inode_block: u64) -> BlockPos {

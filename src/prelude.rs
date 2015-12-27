@@ -4,6 +4,7 @@ pub use encode::*;
 pub use error::{Error, Result};
 pub use volume::{Volume};
 pub use fs::*;
+pub use group::*;
 pub use inode::*;
 pub use dir::*;
 pub use file::*;

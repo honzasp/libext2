@@ -2,12 +2,13 @@ use prelude::*;
 
 #[derive(Debug)]
 pub struct FileHandle {
-  inode: Inode,
+  ino: u64,
 }
 
-pub fn open_file(_fs: &mut Filesystem, inode: Inode) -> Result<FileHandle> {
+pub fn open_file(fs: &mut Filesystem, ino: u64) -> Result<FileHandle> {
+  let inode = try!(get_inode(fs, ino));
   if inode.file_type == FileType::Regular {
-    Ok(FileHandle { inode: inode })
+    Ok(FileHandle { ino: ino })
   } else {
     Err(Error::new(format!("inode is not a regular file")))
   }
@@ -16,15 +17,17 @@ pub fn open_file(_fs: &mut Filesystem, inode: Inode) -> Result<FileHandle> {
 pub fn read_file(fs: &mut Filesystem, handle: &mut FileHandle,
     offset: u64, buffer: &mut [u8]) -> Result<u64> 
 {
-  read_inode_data(fs, &handle.inode, offset, buffer)
+  let inode = try!(get_inode(fs, handle.ino));
+  read_inode_data(fs, &inode, offset, buffer)
 }
 
 pub fn write_file(fs: &mut Filesystem, handle: &mut FileHandle,
     offset: u64, buffer: &[u8]) -> Result<u64>
 {
-  write_inode_data(fs, &mut handle.inode, offset, buffer)
+  let mut inode = try!(get_inode(fs, handle.ino));
+  write_inode_data(fs, &mut inode, offset, buffer)
 }
 
-pub fn close_file(_fs: &mut Filesystem, _handle: FileHandle) -> Result<()> {
-  Ok(())
+pub fn close_file(fs: &mut Filesystem, handle: FileHandle) -> Result<()> {
+  flush_ino(fs, handle.ino)
 }

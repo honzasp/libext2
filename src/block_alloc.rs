@@ -1,17 +1,13 @@
-use std::{cmp};
 use prelude::*;
 
 pub fn alloc_block(fs: &mut Filesystem, first_group_idx: u64) -> Result<Option<u64>> {
   Ok(match try!(alloc_block_in_group(fs, first_group_idx)) {
-    Some(block) => {
-      println!("alloc_block in first_group {}: {}", first_group_idx, block);
-      Some(group_local_to_block(fs, first_group_idx, block))
-    },
+    Some(block) =>
+      Some(group_local_to_block(fs, first_group_idx, block)),
     None => {
       let group_count = fs.group_count();
       for group_idx in (first_group_idx..group_count).chain(0..first_group_idx) {
         if let Some(block) = try!(alloc_block_in_group(fs, group_idx)) {
-          println!("alloc_block in group {}: {}", group_idx, block);
           return Ok(Some(group_local_to_block(fs, group_idx, block)));
         }
       }
@@ -21,34 +17,22 @@ pub fn alloc_block(fs: &mut Filesystem, first_group_idx: u64) -> Result<Option<u
 }
 
 fn alloc_block_in_group(fs: &mut Filesystem, group_idx: u64) -> Result<Option<u64>> {
-  let group_desc = try!(read_group_desc(fs, group_idx));
-  let block_size = fs.block_size();
-  let blocks_per_group = fs.superblock.blocks_per_group as u64;
-
-  let mut bitmap_buffer = make_buffer(block_size);
-  let mut bitmap_block = 0;
-  while bitmap_block * block_size < blocks_per_group / 8 {
-    let bitmap_offset = (bitmap_block + group_desc.block_bitmap as u64) * block_size;
-    let bitmap_begin = bitmap_block * block_size;
-    let bitmap_end = cmp::min(bitmap_begin + block_size, blocks_per_group / 8);
-
-    let bitmap = &mut bitmap_buffer[0..(bitmap_end - bitmap_begin) as usize];
-    try!(fs.volume.read(bitmap_offset, bitmap));
-
-    match find_zero_bit_in_bitmap(bitmap) {
-      Some((byte, bit)) => {
-        println!("alloc group {} block {}",
-                  group_idx, (bitmap_begin + byte) * 8 + bit);
-        try!(fs.volume.write(bitmap_offset + byte,
-              &[bitmap[byte as usize] | (1 << bit)]));
-        return Ok(Some((bitmap_begin + byte) * 8 + bit))
-      },
-      None => {},
-    }
-    bitmap_block = bitmap_block + 1;
+  let group_id = group_idx as usize;
+  if fs.groups[group_id].desc.free_blocks_count == 0 {
+    return Ok(None)
   }
 
-  Ok(None)
+  match find_zero_bit_in_bitmap(&fs.groups[group_id].block_bitmap[..]) {
+    Some((byte, bit)) => {
+      fs.groups[group_id].block_bitmap[byte as usize] |= 1 << bit;
+      fs.groups[group_id].desc.free_blocks_count -= 1;
+      fs.groups[group_id].dirty = true;
+      fs.superblock.free_blocks_count -= 1;
+      fs.superblock_dirty = true;
+      Ok(Some(byte * 8 + bit))
+    },
+    None => Ok(None),
+  }
 }
 
 fn find_zero_bit_in_bitmap(bitmap: &[u8]) -> Option<(u64, u64)> {
@@ -56,7 +40,6 @@ fn find_zero_bit_in_bitmap(bitmap: &[u8]) -> Option<(u64, u64)> {
     if bitmap[byte as usize] == 0xff {
       continue
     }
-
     for bit in 0..8 {
       if (bitmap[byte as usize] & (1 << bit)) == 0 {
         return Some((byte, bit))

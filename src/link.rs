@@ -1,7 +1,8 @@
 use std::{cmp};
 use prelude::*;
 
-pub fn read_link(fs: &mut Filesystem, inode: Inode) -> Result<Vec<u8>> {
+pub fn read_link(fs: &mut Filesystem, ino: u64) -> Result<Vec<u8>> {
+  let inode = try!(get_inode(fs, ino));
   if inode.file_type == FileType::Symlink {
     let fast_symlink =
       if inode.file_acl != 0 {

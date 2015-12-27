@@ -28,19 +28,29 @@ impl Fuse {
 
 const TTL: time::Timespec = time::Timespec { sec: 1, nsec: 0 };
 
+impl Drop for Fuse {
+  fn drop(&mut self) {
+    let _ = ext2::flush_fs(&mut self.fs);
+  }
+}
+
 impl fuse::Filesystem for Fuse {
+  fn destroy(&mut self, _req: &fuse::Request) {
+    println!("destroy");
+    let _ = ext2::flush_fs(&mut self.fs);
+  }
+
   fn lookup(&mut self, _req: &fuse::Request,
     parent_ino: u64, name: &path::Path, reply: fuse::ReplyEntry)
   {
     println!("lookup (ino {}, name {:?})", parent_ino, 
              &name.to_string_lossy());
     let res: Result<_, ext2::Error> = (|| {
-      let parent_inode = try!(ext2::read_inode(&mut self.fs, ext2_ino(parent_ino)));
       let entry = try!(ext2::lookup_dir(&mut self.fs,
-          parent_inode, name.as_os_str().as_bytes()));
+          ext2_ino(parent_ino), name.as_os_str().as_bytes()));
       Ok(match entry {
         Some(entry_ino) => {
-          let entry_inode = try!(ext2::read_inode(&mut self.fs, entry_ino));
+          let entry_inode = try!(ext2::get_inode(&mut self.fs, entry_ino));
           Some(inode_to_file_attr(&entry_inode))
         },
         None => None,
@@ -56,7 +66,7 @@ impl fuse::Filesystem for Fuse {
 
   fn getattr(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyAttr) {
     println!("getattr (ino {})", ino);
-    match ext2::read_inode(&mut self.fs, ext2_ino(ino)) {
+    match ext2::get_inode(&mut self.fs, ext2_ino(ino)) {
       Err(_err) => reply.error(65),
       Ok(inode) => reply.attr(&TTL, &inode_to_file_attr(&inode)),
     }
@@ -64,12 +74,7 @@ impl fuse::Filesystem for Fuse {
 
   fn readlink(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyData) {
     println!("readlink (ino {})", ino);
-    let res: Result<_, ext2::Error> = (|| {
-      let inode = try!(ext2::read_inode(&mut self.fs, ext2_ino(ino)));
-      ext2::read_link(&mut self.fs, inode)
-    })();
-
-    match res {
+    match ext2::read_link(&mut self.fs, ext2_ino(ino)) {
       Err(_err) => reply.error(65),
       Ok(path) => reply.data(&path[..]),
     }
@@ -79,17 +84,13 @@ impl fuse::Filesystem for Fuse {
     _flags: u32, reply: fuse::ReplyOpen) 
   {
     println!("open (ino {})", ino);
-    let res: Result<_, ext2::Error> = (|| {
-      let inode = try!(ext2::read_inode(&mut self.fs, ext2_ino(ino)));
-      let handle = try!(ext2::open_file(&mut self.fs, inode));
-      self.file_handles.insert(self.next_fh, handle);
-      self.next_fh += 1;
-      Ok(self.next_fh - 1)
-    })();
-
-    match res {
+    match ext2::open_file(&mut self.fs, ext2_ino(ino)) {
       Err(_err) => reply.error(65),
-      Ok(fh) => reply.opened(fh, 0),
+      Ok(handle) => {
+        self.file_handles.insert(self.next_fh, handle);
+        self.next_fh += 1;
+        reply.opened(self.next_fh - 1, 0);
+      }
     }
   }
 
@@ -151,17 +152,13 @@ impl fuse::Filesystem for Fuse {
     _flags: u32, reply: fuse::ReplyOpen)
   {
     println!("opendir (ino {})", ino);
-    let res: Result<_, ext2::Error> = (|| {
-      let dir_inode = try!(ext2::read_inode(&mut self.fs, ext2_ino(ino)));
-      let dir_handle = try!(ext2::open_dir(&mut self.fs, dir_inode));
-      self.dir_handles.insert(self.next_fh, dir_handle);
-      self.next_fh += 1;
-      Ok(self.next_fh - 1)
-    })();
-
-    match res {
+    match ext2::open_dir(&mut self.fs, ext2_ino(ino)) {
       Err(_err) => reply.error(65),
-      Ok(fh) => reply.opened(fh, 0),
+      Ok(dir_handle) => {
+        self.dir_handles.insert(self.next_fh, dir_handle);
+        self.next_fh += 1;
+        reply.opened(self.next_fh - 1, 0)
+      },
     }
   }
 

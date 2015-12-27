@@ -32,10 +32,13 @@ pub fn decode_superblock(bytes: &[u8], read_only: bool) -> Result<Superblock> {
 
   Ok(Superblock {
     blocks_count: decode_u32(&bytes[4..]),
+    free_blocks_count: decode_u32(&bytes[12..]),
+    free_inodes_count: decode_u32(&bytes[16..]),
     first_data_block: decode_u32(&bytes[20..]),
     log_block_size: decode_u32(&bytes[24..]),
     blocks_per_group: decode_u32(&bytes[32..]),
     inodes_per_group: decode_u32(&bytes[40..]),
+    state: state,
     rev_level: rev,
     first_ino: if rev >= 1 { decode_u32(&bytes[84..]) } else { 11 },
     inode_size: if rev >= 1 { decode_u16(&bytes[88..]) } else { 128 },
@@ -51,6 +54,9 @@ pub fn decode_group_desc(_superblock: &Superblock, bytes: &[u8]) -> Result<Group
     block_bitmap: decode_u32(&bytes[0..]),
     inode_bitmap: decode_u32(&bytes[4..]),
     inode_table: decode_u32(&bytes[8..]),
+    free_blocks_count: decode_u16(&bytes[12..]),
+    free_inodes_count: decode_u16(&bytes[14..]),
+    used_dirs_count: decode_u16(&bytes[16..]),
   })
 }
 
@@ -109,12 +115,11 @@ fn decode_inode_file_type(mode: u16) -> Result<FileType> {
     10 => FileType::Symlink,
     12 => FileType::Socket,
     _ => return Err(Error::new(
-        format!("Unknown file type 0x{:x}", type_nibble))),
+        format!("Unknown file type {}", type_nibble))),
   })
 }
 
 pub fn decode_dir_entry(superblock: &Superblock, bytes: &[u8]) -> Result<DirEntry> {
-  let name_len = bytes[6] as usize;
   let file_type = if superblock.rev_level >= 1 {
       try!(decode_dir_entry_file_type(bytes[7]))
     } else {
@@ -124,8 +129,8 @@ pub fn decode_dir_entry(superblock: &Superblock, bytes: &[u8]) -> Result<DirEntr
   Ok(DirEntry {
     ino: decode_u32(&bytes[0..]),
     rec_len: decode_u16(&bytes[4..]),
+    name_len: bytes[6],
     file_type: file_type,
-    name: bytes[8..8+name_len].to_vec(),
   })
 }
 

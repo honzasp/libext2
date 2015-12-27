@@ -1,10 +1,13 @@
 #[derive(Debug, Copy, Clone)]
 pub struct Superblock {
   pub blocks_count: u32,
+  pub free_blocks_count: u32,
+  pub free_inodes_count: u32,
   pub first_data_block: u32,
   pub log_block_size: u32,
   pub blocks_per_group: u32,
   pub inodes_per_group: u32,
+  pub state: u16,
   pub rev_level: u32,
   pub first_ino: u32,
   pub inode_size: u16,
@@ -39,8 +42,10 @@ pub struct GroupDesc {
   pub block_bitmap: u32,
   pub inode_bitmap: u32,
   pub inode_table: u32,
+  pub free_blocks_count: u16,
+  pub free_inodes_count: u16,
+  pub used_dirs_count: u16,
 }
-
 
 #[derive(Debug, Copy, Clone)]
 pub struct Inode {
@@ -81,7 +86,7 @@ pub struct AccessRights(pub u16);
 pub struct DirEntry {
   pub ino: u32,
   pub rec_len: u16,
+  pub name_len: u8,
   pub file_type: Option<FileType>,
-  pub name: Vec<u8>,
 }
 

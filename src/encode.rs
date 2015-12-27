@@ -1,5 +1,39 @@
-use defs::*;
-use error::{Error, Result};
+use prelude::*;
+
+pub fn encode_superblock(superblock: &Superblock, bytes: &mut [u8]) -> Result<()> {
+  encode_u32(superblock.blocks_count, &mut bytes[4..]);
+  encode_u32(superblock.free_blocks_count, &mut bytes[12..]);
+  encode_u32(superblock.free_inodes_count, &mut bytes[16..]);
+  encode_u32(superblock.first_data_block, &mut bytes[20..]);
+  encode_u32(superblock.log_block_size, &mut bytes[24..]);
+  encode_u32(superblock.blocks_per_group, &mut bytes[32..]);
+  encode_u32(superblock.inodes_per_group, &mut bytes[40..]);
+  encode_u16(Superblock::MAGIC, &mut bytes[56..]);
+  encode_u16(superblock.state, &mut bytes[58..]);
+  encode_u32(superblock.rev_level, &mut bytes[76..]);
+
+  if superblock.rev_level >= 1 {
+    encode_u32(superblock.first_ino, &mut bytes[84..]);
+    encode_u16(superblock.inode_size, &mut bytes[88..]);
+    encode_u32(superblock.feature_compat, &mut bytes[92..]);
+    encode_u32(superblock.feature_incompat, &mut bytes[96..]);
+    encode_u32(superblock.feature_ro_compat, &mut bytes[100..]);
+  }
+
+  Ok(())
+}
+
+pub fn encode_group_desc(_superblock: &Superblock,
+  group_desc: &GroupDesc, bytes: &mut [u8]) -> Result<()>
+{
+  encode_u32(group_desc.block_bitmap, &mut bytes[0..]);
+  encode_u32(group_desc.inode_bitmap, &mut bytes[4..]);
+  encode_u32(group_desc.inode_table, &mut bytes[8..]);
+  encode_u16(group_desc.free_blocks_count, &mut bytes[12..]);
+  encode_u16(group_desc.free_inodes_count, &mut bytes[14..]);
+  encode_u16(group_desc.used_dirs_count, &mut bytes[16..]);
+  Ok(())
+}
 
 pub fn encode_inode(superblock: &Superblock, inode: &Inode,
   bytes: &mut [u8]) -> Result<()>

@@ -2,8 +2,8 @@
 pub use defs::*;
 pub use error::{Error, Result};
 pub use volume::{Volume, FileVolume};
-pub use fs::{Filesystem, mount_fs};
-pub use inode::{read_inode};
+pub use fs::{Filesystem, mount_fs, flush_fs};
+pub use inode::{get_inode};
 pub use dir::{DirHandle, lookup_dir, open_dir, read_dir, close_dir};
 pub use file::{FileHandle, open_file, read_file, write_file, close_file};
 pub use link::{read_link};
@@ -16,6 +16,7 @@ mod encode;
 mod error;
 mod file;
 mod fs;
+mod group;
 mod inode;
 mod link;
 mod prelude;
