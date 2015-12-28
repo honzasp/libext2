@@ -94,6 +94,12 @@ impl fuse::Filesystem for Fuse {
     }
   }
 
+  fn mkdir(&mut self, req: &fuse::Request, parent: u64, name: &path::Path,
+    mode: u32, reply: fuse::ReplyEntry)
+  {
+    self.mknod(req, parent, name, 0x4000 + (mode & 0xfff), 0, reply)
+  }
+
   fn open(&mut self, _req: &fuse::Request, ino: u64,
     _flags: u32, reply: fuse::ReplyOpen) 
   {

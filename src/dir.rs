@@ -92,16 +92,27 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
   let mut last_offset = 0;
   while offset < dir_inode.size {
     let (entry, entry_name, next_offset) = try!(read_dir_entry(fs, dir_inode, offset));
-    println!("{2} => {3}: entry {0:?} {1:?}", entry, entry_name, offset, next_offset);
 
     if entry_name == name {
+      if entry.ino as u64 == entry_inode.ino {
+        return Ok(());
+      }
+
       let new_entry = DirEntry {
         ino: entry_inode.ino as u32,
         rec_len: entry.rec_len,
         name_len: entry.name_len,
         file_type: Some(entry_inode.mode.file_type),
       };
-      return write_dir_entry(fs, dir_inode, offset, &new_entry, None);
+      try!(write_dir_entry(fs, dir_inode, offset, &new_entry, None));
+      entry_inode.links_count += 1;
+
+      let mut old_inode = try!(get_inode(fs, entry.ino as u64));
+      // TODO: unlink old inode correctly
+      old_inode.links_count -= 1;
+      try!(update_inode(fs, &old_inode));
+
+      return Ok(());
     }
 
     let free_offset =
@@ -111,7 +122,6 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
         offset + dir_entry_size(entry_name.len() as u64)
       });
     let free_size = cmp::min(next_offset - free_offset, space_in_block(fs, offset));
-    println!("  free {} at {}", free_size, free_offset);
 
     if place_for_entry.is_none() && free_size >= entry_size {
       place_for_entry = Some(FreeSpace {
@@ -119,7 +129,6 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
         prev_offset: offset,
         next_offset: next_offset,
       });
-      println!("  place for entry {:?}", place_for_entry);
     }
 
     last_offset = offset;
@@ -127,6 +136,45 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
   }
 
   insert_dir_entry(fs, dir_inode, entry_inode, name, place_for_entry, last_offset)
+}
+
+pub fn init_dir(fs: &mut Filesystem, parent_inode: &mut Inode, 
+  dir_inode: &mut Inode) -> Result<()>
+{
+  let dot_dot_offset = align_4(dir_entry_size(1));
+  let mut buffer = make_buffer(fs.block_size());
+
+  let dot_entry = DirEntry {
+    ino: dir_inode.ino as u32,
+    rec_len: dot_dot_offset as u16,
+    name_len: 1,
+    file_type: Some(FileType::Dir),
+  };
+
+  let dot_dot_entry = DirEntry {
+    ino: parent_inode.ino as u32,
+    rec_len: (fs.block_size() - dot_dot_offset) as u16,
+    name_len: 2,
+    file_type: Some(FileType::Dir),
+  };
+
+  try!(encode_dir_entry(&fs.superblock, &dot_entry, &mut buffer[0..]));
+  try!(encode_dir_entry(&fs.superblock, &dot_dot_entry,
+    &mut buffer[dot_dot_offset as usize..]));
+  buffer[(dir_entry_size(0) + 0) as usize] = b'.';
+  buffer[(dot_dot_offset + dir_entry_size(0) + 0) as usize] = b'.';
+  buffer[(dot_dot_offset + dir_entry_size(0) + 1) as usize] = b'.';
+
+  try!(write_inode_data(fs, dir_inode, 0, &buffer[..]));
+  parent_inode.links_count += 1;
+  try!(update_inode(fs, parent_inode));
+  dir_inode.links_count += 1;
+  try!(update_inode(fs, dir_inode));
+
+  let (group_idx, _) = get_ino_group(fs, dir_inode.ino);
+  fs.groups[group_idx as usize].desc.used_dirs_count += 1;
+  fs.groups[group_idx as usize].dirty = true;
+  Ok(())
 }
 
 fn insert_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,

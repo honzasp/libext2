@@ -30,7 +30,7 @@ pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
     Some(ino) => ino,
   };
 
-  let mut new_inode = try!(init_inode(fs, new_ino, mode));
+  let mut new_inode = try!(init_inode(fs, &mut dir_inode, new_ino, mode));
   try!(add_dir_entry(fs, &mut dir_inode, &mut new_inode, name));
   Ok(new_inode)
 }
@@ -58,6 +58,7 @@ fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
 }
 
 fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
+  println!("write_inode({:?})", inode);
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
@@ -72,8 +73,10 @@ fn locate_inode(fs: &mut Filesystem, ino: u64) -> Result<(u64, u64)> {
   Ok((offset, inode_size))
 }
 
-fn init_inode(fs: &mut Filesystem, ino: u64, mode: Mode) -> Result<Inode> {
-  let inode = Inode {
+fn init_inode(fs: &mut Filesystem, dir_inode: &mut Inode,
+  ino: u64, mode: Mode) -> Result<Inode> 
+{
+  let mut inode = Inode {
     ino: ino,
     mode: mode,
     uid: 0, gid: 0,
@@ -83,8 +86,11 @@ fn init_inode(fs: &mut Filesystem, ino: u64, mode: Mode) -> Result<Inode> {
     block: [0; 15],
     file_acl: 0,
   };
+
+  if mode.file_type == FileType::Dir {
+    try!(init_dir(fs, dir_inode, &mut inode));
+  }
   try!(update_inode(fs, &inode));
-  try!(flush_ino(fs, ino));
   Ok(inode)
 }
 
@@ -336,7 +342,7 @@ fn inode_block_to_pos(fs: &Filesystem, inode_block: u64) -> BlockPos {
   }
 }
 
-fn get_ino_group(fs: &Filesystem, ino: u64) -> (u64, u64) {
+pub fn get_ino_group(fs: &Filesystem, ino: u64) -> (u64, u64) {
   let group_size = fs.superblock.inodes_per_group as u64;
   ((ino - 1) / group_size, (ino - 1) % group_size)
 }
