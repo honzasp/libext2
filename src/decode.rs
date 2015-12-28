@@ -62,12 +62,11 @@ pub fn decode_group_desc(_superblock: &Superblock, bytes: &[u8]) -> Result<Group
 
 pub fn decode_inode(superblock: &Superblock, ino: u64, bytes: &[u8]) -> Result<Inode> {
   assert!(bytes.len() >= 128);
-  let mode = decode_u16(&bytes[0..]);
-  let file_type = try!(decode_inode_file_type(mode));
+  let mode = try!(decode_inode_mode(decode_u16(&bytes[0..])));
 
   let size_low = decode_u32(&bytes[4..]) as u64;
   let size_high =
-    if superblock.rev_level >= 1 && file_type == FileType::Regular {
+    if superblock.rev_level >= 1 && mode.file_type == FileType::Regular {
       decode_u32(&bytes[108..])
     } else {
       0
@@ -85,11 +84,7 @@ pub fn decode_inode(superblock: &Superblock, ino: u64, bytes: &[u8]) -> Result<I
 
   Ok(Inode {
     ino: ino,
-    file_type: file_type,
-    suid: (mode & 0x0800) != 0,
-    sgid: (mode & 0x0400) != 0,
-    sticky: (mode & 0x0200) != 0,
-    access_rights: AccessRights(mode & 0x01ff),
+    mode: mode,
     uid: uid_low + (uid_high << 16),
     gid: gid_low + (gid_high << 16),
     size: size_low + (size_high << 32),
@@ -104,9 +99,9 @@ pub fn decode_inode(superblock: &Superblock, ino: u64, bytes: &[u8]) -> Result<I
   })
 }
 
-fn decode_inode_file_type(mode: u16) -> Result<FileType> {
+pub fn decode_inode_mode(mode: u16) -> Result<Mode> {
   let type_nibble = (mode & 0xf000) >> 12;
-  Ok(match type_nibble {
+  let file_type = match type_nibble {
     1  => FileType::Fifo,
     2  => FileType::CharDev,
     4  => FileType::Dir,
@@ -116,6 +111,14 @@ fn decode_inode_file_type(mode: u16) -> Result<FileType> {
     12 => FileType::Socket,
     _ => return Err(Error::new(
         format!("Unknown file type {}", type_nibble))),
+  };
+
+  Ok(Mode {
+    file_type: file_type,
+    suid: (mode & 0x0800) != 0,
+    sgid: (mode & 0x0400) != 0,
+    sticky: (mode & 0x0200) != 0,
+    access_rights: mode & 0x01ff,
   })
 }
 

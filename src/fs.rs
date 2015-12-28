@@ -16,6 +16,7 @@ pub struct Group {
   pub idx: u64,
   pub desc: GroupDesc,
   pub block_bitmap: Vec<u8>,
+  pub inode_bitmap: Vec<u8>,
   pub dirty: bool,
 }
 

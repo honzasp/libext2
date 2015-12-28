@@ -11,6 +11,30 @@ pub fn get_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
   Ok(inode)
 }
 
+pub fn inode_mode_from_linux_mode(mode: u16) -> Result<Mode> {
+  decode_inode_mode(mode)
+}
+
+pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
+  name: &[u8], mode: Mode) -> Result<Inode>
+{
+  let mut dir_inode = try!(get_inode(fs, dir_ino));
+  if dir_inode.mode.file_type != FileType::Dir {
+    return Err(Error::new(format!(
+      "Inode {} is not a directory", dir_ino)));
+  }
+
+  let dir_group = get_ino_group(fs, dir_ino).0;
+  let new_ino = match try!(alloc_inode(fs, dir_group)) {
+    None => return Err(Error::new(format!("No free inodes left"))),
+    Some(ino) => ino,
+  };
+
+  let mut new_inode = try!(init_inode(fs, new_ino, mode));
+  try!(add_dir_entry(fs, &mut dir_inode, &mut new_inode, name));
+  Ok(new_inode)
+}
+
 pub fn update_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
   fs.inodes.insert(inode.ino, inode.clone());
   fs.dirty_inos.insert(inode.ino);
@@ -34,7 +58,6 @@ fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
 }
 
 fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
-  println!("write_inode {}: {:?}", inode.ino, inode);
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
@@ -47,6 +70,22 @@ fn locate_inode(fs: &mut Filesystem, ino: u64) -> Result<(u64, u64)> {
   let inode_table = fs.groups[group_idx as usize].desc.inode_table as u64;
   let offset = inode_table * fs.block_size() + local_idx * inode_size;
   Ok((offset, inode_size))
+}
+
+fn init_inode(fs: &mut Filesystem, ino: u64, mode: Mode) -> Result<Inode> {
+  let inode = Inode {
+    ino: ino,
+    mode: mode,
+    uid: 0, gid: 0,
+    size: 0, size_512: 0,
+    atime: 0, ctime: 0, mtime: 0,
+    links_count: 0, flags: 0,
+    block: [0; 15],
+    file_acl: 0,
+  };
+  try!(update_inode(fs, &inode));
+  try!(flush_ino(fs, ino));
+  Ok(inode)
 }
 
 #[derive(Copy, Clone, Debug)]

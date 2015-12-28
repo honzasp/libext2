@@ -39,7 +39,7 @@ pub fn encode_inode(superblock: &Superblock, inode: &Inode,
   bytes: &mut [u8]) -> Result<()>
 {
   assert!(bytes.len() >= 128);
-  encode_u16(encode_inode_mode(inode), &mut bytes[0..]);
+  encode_u16(encode_inode_mode(&inode.mode), &mut bytes[0..]);
 
   encode_u16((inode.uid & 0xffff) as u16, &mut bytes[2..]);
   encode_u16(((inode.uid >> 16) & 0xffff) as u16, &mut bytes[120..]);
@@ -69,15 +69,15 @@ pub fn encode_inode(superblock: &Superblock, inode: &Inode,
   Ok(())
 }
 
-fn encode_inode_mode(inode: &Inode) -> u16 {
-  encode_inode_file_type(inode.file_type) +
-    if inode.suid { 0x0800 } else { 0 } +
-    if inode.sgid { 0x0400 } else { 0 } +
-    if inode.sticky { 0x0200 } else { 0 } +
-    inode.access_rights.0
+fn encode_inode_mode(mode: &Mode) -> u16 {
+  encode_mode_file_type(mode.file_type) +
+    if mode.suid { 0x0800 } else { 0 } +
+    if mode.sgid { 0x0400 } else { 0 } +
+    if mode.sticky { 0x0200 } else { 0 } +
+    mode.access_rights
 }
 
-fn encode_inode_file_type(file_type: FileType) -> u16 {
+fn encode_mode_file_type(file_type: FileType) -> u16 {
   (match file_type {
     FileType::Fifo => 1,
     FileType::CharDev => 2,
@@ -87,6 +87,29 @@ fn encode_inode_file_type(file_type: FileType) -> u16 {
     FileType::Symlink => 10,
     FileType::Socket => 12,
   }) << 12
+}
+
+pub fn encode_dir_entry(_superblock: &Superblock, entry: &DirEntry,
+  bytes: &mut [u8]) -> Result<()>
+{
+  encode_u32(entry.ino, &mut bytes[0..]);
+  encode_u16(entry.rec_len, &mut bytes[4..]);
+  bytes[6] = entry.name_len;
+  bytes[7] = encode_dir_entry_file_type(entry.file_type);
+  Ok(())
+}
+
+fn encode_dir_entry_file_type(file_type: Option<FileType>) -> u8 {
+  match file_type {
+    None => 0,
+    Some(FileType::Regular) => 1,
+    Some(FileType::Dir) => 2,
+    Some(FileType::CharDev) => 3,
+    Some(FileType::BlockDev) => 4,
+    Some(FileType::Fifo) => 5,
+    Some(FileType::Socket) => 6,
+    Some(FileType::Symlink) => 7,
+  }
 }
 
 pub fn encode_u32(value: u32, bytes: &mut [u8]) {

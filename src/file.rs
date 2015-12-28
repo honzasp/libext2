@@ -7,7 +7,7 @@ pub struct FileHandle {
 
 pub fn open_file(fs: &mut Filesystem, ino: u64) -> Result<FileHandle> {
   let inode = try!(get_inode(fs, ino));
-  if inode.file_type == FileType::Regular {
+  if inode.mode.file_type == FileType::Regular {
     Ok(FileHandle { ino: ino })
   } else {
     Err(Error::new(format!("inode is not a regular file")))

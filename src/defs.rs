@@ -50,11 +50,7 @@ pub struct GroupDesc {
 #[derive(Debug, Copy, Clone)]
 pub struct Inode {
   pub ino: u64,
-  pub file_type: FileType,
-  pub suid: bool,
-  pub sgid: bool,
-  pub sticky: bool,
-  pub access_rights: AccessRights,
+  pub mode: Mode,
   pub uid: u32,
   pub gid: u32,
   pub size: u64,
@@ -68,6 +64,15 @@ pub struct Inode {
   pub file_acl: u32,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Mode {
+  pub file_type: FileType,
+  pub suid: bool,
+  pub sgid: bool,
+  pub sticky: bool,
+  pub access_rights: u16,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FileType {
   Regular,
@@ -79,10 +84,7 @@ pub enum FileType {
   Symlink,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct AccessRights(pub u16);
-
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct DirEntry {
   pub ino: u32,
   pub rec_len: u16,

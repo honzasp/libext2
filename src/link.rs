@@ -3,7 +3,7 @@ use prelude::*;
 
 pub fn read_link(fs: &mut Filesystem, ino: u64) -> Result<Vec<u8>> {
   let inode = try!(get_inode(fs, ino));
-  if inode.file_type == FileType::Symlink {
+  if inode.mode.file_type == FileType::Symlink {
     let fast_symlink =
       if inode.file_acl != 0 {
         inode.size_512 as u64 == fs.block_size() / 512 

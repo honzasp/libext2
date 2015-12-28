@@ -17,6 +17,7 @@ impl Volume for FileVolume {
   }
 
   fn write(&mut self, offset: u64, buffer: &[u8]) -> Result<()> {
+    println!("WRITE {}..{} ({})", offset, offset + buffer.len() as u64, buffer.len());
     try!(self.0.seek(io::SeekFrom::Start(offset)));
     try!(self.0.write_all(buffer));
     Ok(())

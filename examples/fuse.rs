@@ -80,6 +80,20 @@ impl fuse::Filesystem for Fuse {
     }
   }
 
+  fn mknod(&mut self, _req: &fuse::Request, parent: u64, name: &path::Path,
+    mode: u32, _rdev: u32, reply: fuse::ReplyEntry)
+  {
+    println!("mknod (ino {}, name {:?}, mode {:x})", parent, name, mode);
+    let res: Result<_, ext2::Error> = (|| {
+      ext2::make_inode_in_dir(&mut self.fs, ext2_ino(parent),
+        name.as_os_str().as_bytes(), try!(ext2_mode(mode as u16)))
+    })();
+    match res {
+      Err(_err) => { print_error(&_err); reply.error(65) },
+      Ok(inode) => reply.entry(&TTL, &inode_to_file_attr(&inode), 0),
+    }
+  }
+
   fn open(&mut self, _req: &fuse::Request, ino: u64,
     _flags: u32, reply: fuse::ReplyOpen) 
   {
@@ -233,6 +247,10 @@ fn ext2_ino(fuse_ino: u64) -> u64 {
   if fuse_ino == 1 { ext2::Filesystem::ROOT_INO } else { fuse_ino }
 }
 
+fn ext2_mode(mode: u16) -> Result<ext2::Mode, ext2::Error> {
+  ext2::inode_mode_from_linux_mode(mode)
+}
+
 fn fuse_ino(ext2_ino: u64) -> u64 {
   if ext2_ino == ext2::Filesystem::ROOT_INO { 1 } else { ext2_ino }
 }
@@ -246,8 +264,8 @@ fn inode_to_file_attr(inode: &ext2::Inode) -> fuse::FileAttr {
     ctime: fuse_timespec(inode.ctime),
     mtime: fuse_timespec(inode.mtime),
     crtime: fuse_timespec(0),
-    kind: fuse_file_type(inode.file_type),
-    perm: inode.access_rights.0,
+    kind: fuse_file_type(inode.mode.file_type),
+    perm: inode.mode.access_rights,
     nlink: inode.links_count as u32,
     uid: inode.uid,
     gid: inode.gid,

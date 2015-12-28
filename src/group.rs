@@ -3,12 +3,21 @@ use prelude::*;
 pub fn read_group(fs: &mut Filesystem, group_idx: u64) -> Result<Group> {
   let table_block = fs.superblock.first_data_block as u64 + 1;
   let desc = try!(read_group_desc(fs, table_block, group_idx));
+
   let block_bitmap_offset = desc.block_bitmap as u64 * fs.block_size();
   let mut block_bitmap = make_buffer(fs.superblock.blocks_per_group as u64 / 8);
   try!(fs.volume.read(block_bitmap_offset, &mut block_bitmap[..]));
+
+  let inode_bitmap_offset = desc.inode_bitmap as u64 * fs.block_size();
+  let mut inode_bitmap = make_buffer(fs.superblock.inodes_per_group as u64 / 8);
+  try!(fs.volume.read(inode_bitmap_offset, &mut inode_bitmap[..]));
+
   Ok(Group {
-    idx: group_idx, desc: desc,
-    block_bitmap: block_bitmap, dirty: false 
+    idx: group_idx,
+    desc: desc,
+    block_bitmap: block_bitmap,
+    inode_bitmap: inode_bitmap,
+    dirty: false 
   })
 }
 
@@ -25,9 +34,15 @@ fn write_group(fs: &mut Filesystem, group_idx: u64) -> Result<()> {
   let group_desc = fs.groups[group_idx as usize].desc;
   let table_block = fs.superblock.first_data_block as u64 + 1;
   try!(write_group_desc(fs, table_block, group_idx, &group_desc));
+
   let block_bitmap_offset = group_desc.block_bitmap as u64 * fs.block_size();
   try!(fs.volume.write(block_bitmap_offset,
     &fs.groups[group_idx as usize].block_bitmap[..]));
+
+  let inode_bitmap_offset = group_desc.inode_bitmap as u64 * fs.block_size();
+  try!(fs.volume.write(inode_bitmap_offset,
+    &fs.groups[group_idx as usize].inode_bitmap[..]));
+
   Ok(())
 }
 
