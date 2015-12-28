@@ -63,3 +63,13 @@ pub fn flush_group(fs: &mut Filesystem, group_idx: u64) -> Result<()> {
   }
   Ok(())
 }
+
+pub fn get_ino_group(fs: &Filesystem, ino: u64) -> (u64, u64) {
+  let group_size = fs.superblock.inodes_per_group as u64;
+  ((ino - 1) / group_size, (ino - 1) % group_size)
+}
+
+pub fn get_block_group(fs: &Filesystem, block: u64) -> (u64, u64) {
+  let group_size = fs.superblock.blocks_per_group as u64;
+  (block / group_size, block % group_size)
+}

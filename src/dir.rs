@@ -14,23 +14,48 @@ pub struct DirLine {
   pub name: Vec<u8>,
 }
 
-pub fn lookup_dir(fs: &mut Filesystem, dir_ino: u64, name: &[u8]) 
+pub fn lookup_in_dir(fs: &mut Filesystem, dir_ino: u64, name: &[u8]) 
   -> Result<Option<u64>> 
 {
-  let inode = try!(get_inode(fs, dir_ino));
-  if inode.mode.file_type != FileType::Dir {
+  let dir_inode = try!(get_inode(fs, dir_ino));
+  if dir_inode.mode.file_type != FileType::Dir {
     return Err(Error::new(format!("inode {} is not a directory", dir_ino)))
   }
 
   let mut offset = 0;
-  while offset < inode.size {
-    let (entry, entry_name, next_offset) = try!(read_dir_entry(fs, &inode, offset));
+  while offset < dir_inode.size {
+    let (entry, entry_name, next_offset) = try!(read_dir_entry(fs, &dir_inode, offset));
     if entry.ino != 0 && name == &entry_name[..] {
       return Ok(Some(entry.ino as u64))
     }
     offset = next_offset;
   }
   Ok(None)
+}
+
+pub fn remove_from_dir(fs: &mut Filesystem, dir_ino: u64, name: &[u8])
+  -> Result<bool>
+{
+  let mut dir_inode = try!(get_inode(fs, dir_ino));
+  if dir_inode.mode.file_type != FileType::Dir {
+    return Err(Error::new(format!("inode {} is not a directory", dir_ino)))
+  }
+
+  let mut offset = 0;
+  let mut last_offset = 0;
+  while offset < dir_inode.size {
+    let (entry, entry_name, next_offset) = try!(read_dir_entry(fs, &dir_inode, offset));
+    if entry.ino != 0 && name == &entry_name[..] {
+      let mut entry_inode = try!(get_inode(fs, entry.ino as u64));
+      try!(erase_dir_entry(fs, &mut dir_inode, offset, last_offset, next_offset));
+      try!(unlink_inode(fs, &mut entry_inode));
+      return Ok(true);
+    }
+    last_offset = offset;
+    offset = next_offset;
+  }
+
+  Ok(false)
 }
 
 pub fn open_dir(fs: &mut Filesystem, ino: u64) -> Result<DirHandle> {
@@ -108,10 +133,7 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
       entry_inode.links_count += 1;
 
       let mut old_inode = try!(get_inode(fs, entry.ino as u64));
-      // TODO: unlink old inode correctly
-      old_inode.links_count -= 1;
-      try!(update_inode(fs, &old_inode));
-
+      try!(unlink_inode(fs, &mut old_inode));
       return Ok(());
     }
 
@@ -205,6 +227,22 @@ fn insert_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
   update_inode(fs, entry_inode)
 }
 
+fn erase_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
+  offset: u64, prev_offset: u64, next_offset: u64) -> Result<()>
+{
+  let new_entry = DirEntry {
+    ino: 0,
+    rec_len: (next_offset - offset) as u16,
+    name_len: 0,
+    file_type: None,
+  };
+
+  try!(write_dir_entry(fs, dir_inode, offset, &new_entry, None));
+  try!(write_dir_entry_rec_len(fs, dir_inode, prev_offset,
+    (next_offset - prev_offset) as u16));
+  Ok(())
+}
+
 fn read_dir_entry(fs: &mut Filesystem, inode: &Inode, offset: u64) 
   -> Result<(DirEntry, Vec<u8>, u64)>
 {
@@ -222,11 +260,11 @@ fn read_dir_entry(fs: &mut Filesystem, inode: &Inode, offset: u64)
   Ok((entry, name_buffer, offset + entry.rec_len as u64))
 }
 
-fn write_dir_entry(fs: &mut Filesystem, inode: &mut Inode, offset: u64,
+fn write_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode, offset: u64,
   entry: &DirEntry, name: Option<&[u8]>) -> Result<()>
 {
   println!("write_dir_entry(ino {}, offset {}, {:?}, {:?})",
-    inode.ino, offset, entry, name);
+    dir_inode.ino, offset, entry, name);
   let mut entry_buffer = make_buffer(
     dir_entry_size(name.map(|n| n.len() as u64).unwrap_or(0)));
   try!(encode_dir_entry(&fs.superblock, entry, &mut entry_buffer[..]));
@@ -237,18 +275,18 @@ fn write_dir_entry(fs: &mut Filesystem, inode: &mut Inode, offset: u64,
       },
     None => (),
   }
-  try!(write_inode_data(fs, inode, offset, &entry_buffer[..]));
+  try!(write_inode_data(fs, dir_inode, offset, &entry_buffer[..]));
   Ok(())
 }
   
-fn write_dir_entry_rec_len(fs: &mut Filesystem, inode: &mut Inode,
+fn write_dir_entry_rec_len(fs: &mut Filesystem, dir_inode: &mut Inode,
   offset: u64, rec_len: u16) -> Result<()>
 {
   println!("write_dir_entry_rec_len(ino {}, offset {}, {})",
-    inode.ino, offset, rec_len);
+    dir_inode.ino, offset, rec_len);
   let mut minibuf = [0; 2];
   encode_u16(rec_len, &mut minibuf[..]);
-  try!(write_inode_data(fs, inode, offset + 4, &minibuf[..]));
+  try!(write_inode_data(fs, dir_inode, offset + 4, &minibuf[..]));
   Ok(())
 }
 

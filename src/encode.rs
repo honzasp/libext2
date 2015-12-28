@@ -62,6 +62,7 @@ pub fn encode_inode(superblock: &Superblock, inode: &Inode,
   encode_u32(inode.atime, &mut bytes[8..]);
   encode_u32(inode.ctime, &mut bytes[12..]);
   encode_u32(inode.mtime, &mut bytes[16..]);
+  encode_u32(inode.dtime, &mut bytes[20..]);
   encode_u16(inode.links_count, &mut bytes[26..]);
   encode_u32(inode.size_512, &mut bytes[28..]);
   encode_u32(inode.flags, &mut bytes[32..]);

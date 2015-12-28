@@ -8,6 +8,30 @@ pub fn alloc_inode(fs: &mut Filesystem, first_group_idx: u64) -> Result<Option<u
   alloc(fs, first_group_idx, alloc_inode_in_group)
 }
 
+pub fn dealloc_block(fs: &mut Filesystem, block: u64) -> Result<()> {
+  let (group_idx, local_idx) = get_block_group(fs, block);
+  let group_id = group_idx as usize;
+  let (local_byte, local_bit) = (local_idx / 8, local_idx % 8);
+  fs.groups[group_id].desc.free_blocks_count += 1;
+  fs.groups[group_id].block_bitmap[local_byte as usize] &= !(1 << local_bit);
+  fs.groups[group_id].dirty = true;
+  fs.superblock.free_blocks_count += 1;
+  fs.superblock_dirty = true;
+  Ok(())
+}
+
+pub fn dealloc_inode(fs: &mut Filesystem, ino: u64) -> Result<()> {
+  let (group_idx, local_idx) = get_ino_group(fs, ino);
+  let group_id = group_idx as usize;
+  let (local_byte, local_bit) = (local_idx / 8, local_idx % 8);
+  fs.groups[group_id].desc.free_inodes_count += 1;
+  fs.groups[group_id].inode_bitmap[local_byte as usize] &= !(1 << local_bit);
+  fs.groups[group_id].dirty = true;
+  fs.superblock.free_inodes_count += 1;
+  fs.superblock_dirty = true;
+  Ok(())
+}
+
 fn alloc(fs: &mut Filesystem, first_group_idx: u64,
   alloc_in_group: fn(&mut Filesystem, u64) -> Result<Option<u64>>) 
   -> Result<Option<u64>>

@@ -46,7 +46,7 @@ impl fuse::Filesystem for Fuse {
     println!("lookup (ino {}, name {:?})", parent_ino, 
              &name.to_string_lossy());
     let res: Result<_, ext2::Error> = (|| {
-      let entry = try!(ext2::lookup_dir(&mut self.fs,
+      let entry = try!(ext2::lookup_in_dir(&mut self.fs,
           ext2_ino(parent_ino), name.as_os_str().as_bytes()));
       Ok(match entry {
         Some(entry_ino) => {
@@ -89,7 +89,7 @@ impl fuse::Filesystem for Fuse {
         name.as_os_str().as_bytes(), try!(ext2_mode(mode as u16)))
     })();
     match res {
-      Err(_err) => { print_error(&_err); reply.error(65) },
+      Err(_err) => reply.error(65),
       Ok(inode) => reply.entry(&TTL, &inode_to_file_attr(&inode), 0),
     }
   }
@@ -98,6 +98,19 @@ impl fuse::Filesystem for Fuse {
     mode: u32, reply: fuse::ReplyEntry)
   {
     self.mknod(req, parent, name, 0x4000 + (mode & 0xfff), 0, reply)
+  }
+
+  fn unlink(&mut self, _req: &fuse::Request, parent: u64,
+    name: &path::Path, reply: fuse::ReplyEmpty)
+  {
+    println!("unlink (ino {}, name {:?})", parent, name);
+    match ext2::remove_from_dir(&mut self.fs,
+      ext2_ino(parent), name.as_os_str().as_bytes()) 
+    {
+      Err(_err) => reply.error(65),
+      Ok(true) => reply.ok(),
+      Ok(false) => reply.error(libc::ENOENT),
+    }
   }
 
   fn open(&mut self, _req: &fuse::Request, ino: u64,

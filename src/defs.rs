@@ -58,6 +58,7 @@ pub struct Inode {
   pub atime: u32,
   pub ctime: u32,
   pub mtime: u32,
+  pub dtime: u32,
   pub links_count: u16,
   pub flags: u32,
   pub block: [u32; 15],

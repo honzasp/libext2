@@ -92,6 +92,7 @@ pub fn decode_inode(superblock: &Superblock, ino: u64, bytes: &[u8]) -> Result<I
     atime: decode_u32(&bytes[8..]),
     ctime: decode_u32(&bytes[12..]),
     mtime: decode_u32(&bytes[16..]),
+    dtime: decode_u32(&bytes[20..]),
     links_count: decode_u16(&bytes[26..]),
     flags: decode_u32(&bytes[32..]),
     block: block,

@@ -35,6 +35,14 @@ pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
   Ok(new_inode)
 }
 
+pub fn unlink_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
+  inode.links_count -= 1;
+  if inode.links_count == 0 {
+    try!(remove_inode(fs, inode))
+  }
+  update_inode(fs, inode)
+}
+
 pub fn update_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
   fs.inodes.insert(inode.ino, inode.clone());
   fs.dirty_inos.insert(inode.ino);
@@ -81,7 +89,7 @@ fn init_inode(fs: &mut Filesystem, dir_inode: &mut Inode,
     mode: mode,
     uid: 0, gid: 0,
     size: 0, size_512: 0,
-    atime: 0, ctime: 0, mtime: 0,
+    atime: 0, ctime: 0, mtime: 0, dtime: 0,
     links_count: 0, flags: 0,
     block: [0; 15],
     file_acl: 0,
@@ -92,6 +100,22 @@ fn init_inode(fs: &mut Filesystem, dir_inode: &mut Inode,
   }
   try!(update_inode(fs, &inode));
   Ok(inode)
+}
+
+fn remove_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
+  if !is_fast_symlink(fs, inode) {
+    for i in 0..15 {
+      if inode.block[i] != 0 {
+        if i < 12 {
+          try!(dealloc_block(fs, inode.block[i] as u64));
+        } else {
+          try!(dealloc_indirect_block(fs, inode.block[i] as u64, i - 11));
+        }
+      }
+    }
+  }
+
+  dealloc_inode(fs, inode.ino)
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -221,6 +245,23 @@ fn alloc_indirect_block(fs: &mut Filesystem, inode: &mut Inode) -> Result<u64> {
   Ok(block)
 }
 
+fn dealloc_indirect_block(fs: &mut Filesystem, indirect_block: u64,
+  level: usize) -> Result<()> 
+{
+  let block_size = fs.block_size();
+  let mut buffer = make_buffer(block_size);
+  try!(fs.volume.read(indirect_block * block_size, &mut buffer[..]));
+  for i in 0..block_size / 4 {
+    let block = decode_u32(&buffer[i as usize * 4..]) as u64;
+    if block != 0 && level > 1 {
+      try!(dealloc_indirect_block(fs, block, level - 1));
+    } else if block != 0 {
+      try!(dealloc_block(fs, block));
+    }
+  }
+  Ok(())
+}
+
 fn get_inode_block(fs: &mut Filesystem, inode: &Inode,
   inode_block: u64) -> Result<Option<u64>> 
 {
@@ -340,9 +381,4 @@ fn inode_block_to_pos(fs: &Filesystem, inode_block: u64) -> BlockPos {
   } else {
     BlockPos::OutOfRange
   }
-}
-
-pub fn get_ino_group(fs: &Filesystem, ino: u64) -> (u64, u64) {
-  let group_size = fs.superblock.inodes_per_group as u64;
-  ((ino - 1) / group_size, (ino - 1) % group_size)
 }
