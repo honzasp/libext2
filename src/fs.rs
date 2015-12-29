@@ -58,7 +58,6 @@ pub fn mount_fs(mut volume: Box<Volume>) -> Result<Filesystem> {
 
 pub fn flush_fs(fs: &mut Filesystem) -> Result<()> {
   let dirty_inos = fs.dirty_inos.clone();
-  println!("flush dirty inos {:?}", dirty_inos);
   for dirty_ino in dirty_inos {
     try!(flush_ino(fs, dirty_ino));
   }

@@ -107,10 +107,16 @@ impl fuse::Filesystem for Fuse {
     match ext2::remove_from_dir(&mut self.fs,
       ext2_ino(parent), name.as_os_str().as_bytes()) 
     {
-      Err(_err) => reply.error(65),
+      Err(_err) => { print_error(&_err); reply.error(65) },
       Ok(true) => reply.ok(),
       Ok(false) => reply.error(libc::ENOENT),
     }
+  }
+
+  fn rmdir(&mut self, req: &fuse::Request, parent: u64,
+    name: &path::Path, reply: fuse::ReplyEmpty)
+  {
+    self.unlink(req, parent, name, reply)
   }
 
   fn open(&mut self, _req: &fuse::Request, ino: u64,
@@ -202,12 +208,17 @@ impl fuse::Filesystem for Fuse {
     let res: Result<_, ext2::Error> = (|| {
       let handle = try!(self.dir_handles.get_mut(&fh)
           .ok_or_else(|| ext2::Error::new(format!("Bad dir handle"))));
-      while let Some(line) = try!(ext2::read_dir(&mut self.fs, handle)) {
+
+      while let Some((next_handle, line)) =
+        try!(ext2::read_dir(&mut self.fs, *handle)) 
+      {
         let ino = fuse_ino(line.ino);
         let file_type = fuse_file_type(line.file_type);
         let name = <OsStr as OsStrExt>::from_bytes(&line.name[..]);
         if reply.add(ino, 0, file_type, name) {
           break
+        } else {
+          *handle = next_handle;
         }
       }
       Ok(())

@@ -49,7 +49,6 @@ fn write_group(fs: &mut Filesystem, group_idx: u64) -> Result<()> {
 fn write_group_desc(fs: &mut Filesystem, table_block: u64,
   group_idx: u64, desc: &GroupDesc) -> Result<()> 
 {
-  println!("write group desc {}: {:?}", group_idx, desc);
   let offset = table_block * fs.block_size() + group_idx * 32;
   let mut desc_buf = make_buffer(32);
   try!(encode_group_desc(&fs.superblock, desc, &mut desc_buf[..]));
@@ -71,5 +70,6 @@ pub fn get_ino_group(fs: &Filesystem, ino: u64) -> (u64, u64) {
 
 pub fn get_block_group(fs: &Filesystem, block: u64) -> (u64, u64) {
   let group_size = fs.superblock.blocks_per_group as u64;
-  (block / group_size, block % group_size)
+  let rel_block = block - fs.superblock.first_data_block as u64;
+  (rel_block / group_size, rel_block % group_size)
 }

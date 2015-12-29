@@ -23,6 +23,10 @@ pub fn read_link(fs: &mut Filesystem, ino: u64) -> Result<Vec<u8>> {
 }
 
 pub fn is_fast_symlink(fs: &Filesystem, inode: &Inode) -> bool {
+  if inode.mode.file_type != FileType::Symlink {
+    return false
+  }
+
   if inode.file_acl != 0 {
     inode.size_512 as u64 == fs.block_size() / 512 
   } else {

@@ -36,6 +36,20 @@ pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
 }
 
 pub fn unlink_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
+  if inode.mode.file_type == FileType::Dir {
+    if !try!(is_dir_empty(fs, inode)) {
+      return Err(Error::new(
+          format!("Cannot unlink non-empty directory inode {}", inode.ino)));
+    }
+
+    if inode.links_count != 2 {
+      return Err(Error::new(format!(
+            "Empty directory {} should have 2 links, but has {}",
+            inode.ino, inode.links_count)));
+    }
+    try!(deinit_dir(fs, inode));
+  }
+
   inode.links_count -= 1;
   if inode.links_count == 0 {
     try!(remove_inode(fs, inode))
@@ -66,7 +80,6 @@ fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
 }
 
 fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
-  println!("write_inode({:?})", inode);
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
@@ -115,6 +128,7 @@ fn remove_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
     }
   }
 
+  inode.dtime = 1451303454;
   dealloc_inode(fs, inode.ino)
 }
 
@@ -259,7 +273,7 @@ fn dealloc_indirect_block(fs: &mut Filesystem, indirect_block: u64,
       try!(dealloc_block(fs, block));
     }
   }
-  Ok(())
+  dealloc_block(fs, indirect_block)
 }
 
 fn get_inode_block(fs: &mut Filesystem, inode: &Inode,
@@ -313,8 +327,6 @@ fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
   {
     if inode.block[idx as usize] == 0 {
       inode.block[idx as usize] = try!(alloc_indirect_block(fs, inode)) as u32;
-      println!("allocate indirect block {} for direct block {} in inode",
-               inode.block[idx as usize], idx);
       try!(update_inode(fs, inode));
     }
     Ok(inode.block[idx as usize] as u64)
@@ -327,8 +339,6 @@ fn set_inode_block(fs: &mut Filesystem, inode: &mut Inode,
     if old_block == 0 {
       let new_block = try!(alloc_indirect_block(fs, inode));
       try!(write_indirect(fs, indirect, entry, new_block));
-      println!("allocate indirect block {} for entry {} in indirect block {}",
-               new_block, entry, indirect);
       Ok(new_block)
     } else {
       Ok(old_block)

@@ -1,7 +1,7 @@
 use std::{cmp};
 use prelude::*;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct DirHandle {
   ino: u64,
   offset: u64,
@@ -42,16 +42,16 @@ pub fn remove_from_dir(fs: &mut Filesystem, dir_ino: u64, name: &[u8])
   }
 
   let mut offset = 0;
-  let mut last_offset = 0;
+  let mut prev_offset = 0;
   while offset < dir_inode.size {
     let (entry, entry_name, next_offset) = try!(read_dir_entry(fs, &dir_inode, offset));
     if entry.ino != 0 && name == &entry_name[..] {
       let mut entry_inode = try!(get_inode(fs, entry.ino as u64));
-      try!(erase_dir_entry(fs, &mut dir_inode, offset, last_offset, next_offset));
       try!(unlink_inode(fs, &mut entry_inode));
+      try!(erase_dir_entry(fs, &mut dir_inode, offset, prev_offset, next_offset));
       return Ok(true);
     }
-    last_offset = offset;
+    prev_offset = offset;
     offset = next_offset;
   }
 
@@ -67,8 +67,8 @@ pub fn open_dir(fs: &mut Filesystem, ino: u64) -> Result<DirHandle> {
   }
 }
 
-pub fn read_dir(fs: &mut Filesystem, handle: &mut DirHandle) 
-  -> Result<Option<DirLine>> 
+pub fn read_dir(fs: &mut Filesystem, mut handle: DirHandle) 
+  -> Result<Option<(DirHandle, DirLine)>> 
 {
   let inode = try!(get_inode(fs, handle.ino));
   if handle.offset >= inode.size {
@@ -85,11 +85,11 @@ pub fn read_dir(fs: &mut Filesystem, handle: &mut DirHandle)
     handle.offset = next_offset;
 
     if entry.ino != 0 {
-      return Ok(Some(DirLine {
+      return Ok(Some((handle, DirLine {
         ino: entry.ino as u64,
         file_type: file_type,
         name: name,
-      }))
+      })))
     }
   }
 }
@@ -110,7 +110,6 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
 {
   assert_eq!(dir_inode.mode.file_type, FileType::Dir);
   let entry_size = dir_entry_size(name.len() as u64);
-  println!("add_dir_entry (size {})", entry_size);
 
   let mut place_for_entry = None;
   let mut offset = 0;
@@ -160,6 +159,21 @@ pub fn add_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
   insert_dir_entry(fs, dir_inode, entry_inode, name, place_for_entry, last_offset)
 }
 
+pub fn is_dir_empty(fs: &mut Filesystem, dir_inode: &Inode) -> Result<bool> {
+  let mut offset = 0;
+  while offset < dir_inode.size {
+    let (entry, entry_name, next_offset) = try!(read_dir_entry(fs, &dir_inode, offset));
+
+    if entry.ino != 0 {
+      if &entry_name[..] != b"." && &entry_name[..] != b".." {
+        return Ok(false);
+      }
+    }
+    offset = next_offset;
+  }
+  Ok(true)
+}
+
 pub fn init_dir(fs: &mut Filesystem, parent_inode: &mut Inode, 
   dir_inode: &mut Inode) -> Result<()>
 {
@@ -196,6 +210,61 @@ pub fn init_dir(fs: &mut Filesystem, parent_inode: &mut Inode,
   let (group_idx, _) = get_ino_group(fs, dir_inode.ino);
   fs.groups[group_idx as usize].desc.used_dirs_count += 1;
   fs.groups[group_idx as usize].dirty = true;
+  Ok(())
+}
+
+pub fn deinit_dir(fs: &mut Filesystem, dir_inode: &mut Inode) -> Result<()> {
+  let mut dot_ino = None;
+  let mut dot_dot_ino = None;
+
+  let mut offset = 0;
+  while offset < dir_inode.size {
+    let (mut entry, entry_name, next_offset) =
+      try!(read_dir_entry(fs, &dir_inode, offset));
+
+    if entry.ino != 0 {
+      if &entry_name[..] == b"." {
+        dot_ino = Some(entry.ino as u64);
+      } else if &entry_name[..] == b".." {
+        dot_dot_ino = Some(entry.ino as u64);
+      } else {
+        return Err(Error::new(format!(
+          "Cannot deinit non-empty directory {}", dir_inode.ino)));
+      }
+
+      entry.ino = 0;
+      try!(write_dir_entry(fs, dir_inode, offset, &entry, None));
+    }
+
+    offset = next_offset;
+  }
+
+  match dot_ino {
+    Some(ino) if ino == dir_inode.ino => 
+      dir_inode.links_count -= 1,
+    Some(ino) => return Err(Error::new(format!(
+      "Directory {} entry '.' points to {}", dir_inode.ino, ino))),
+    None => return Err(Error::new(format!(
+      "Directory {} has no '.' entry", dir_inode.ino))),
+  }
+
+  match dot_dot_ino {
+    Some(parent_ino) if parent_ino == dir_inode.ino =>
+      return Err(Error::new(format!(
+        "Directory {} entry '.' points to itself", dir_inode.ino))),
+    Some(parent_ino) => {
+      let mut parent_inode = try!(get_inode(fs, parent_ino));
+      parent_inode.links_count -= 1;
+      try!(update_inode(fs, &parent_inode));
+    },
+    None => return Err(Error::new(format!(
+      "Directory {} has no '..' entry", dir_inode.ino))),
+  }
+
+  let (group_idx, _) = get_ino_group(fs, dir_inode.ino);
+  fs.groups[group_idx as usize].desc.used_dirs_count -= 1;
+  fs.groups[group_idx as usize].dirty = true;
+
   Ok(())
 }
 
@@ -238,8 +307,11 @@ fn erase_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode,
   };
 
   try!(write_dir_entry(fs, dir_inode, offset, &new_entry, None));
-  try!(write_dir_entry_rec_len(fs, dir_inode, prev_offset,
-    (next_offset - prev_offset) as u16));
+
+  if offset % fs.block_size() != 0 {
+    try!(write_dir_entry_rec_len(fs, dir_inode, prev_offset,
+      (next_offset - prev_offset) as u16));
+  }
   Ok(())
 }
 
@@ -263,8 +335,6 @@ fn read_dir_entry(fs: &mut Filesystem, inode: &Inode, offset: u64)
 fn write_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode, offset: u64,
   entry: &DirEntry, name: Option<&[u8]>) -> Result<()>
 {
-  println!("write_dir_entry(ino {}, offset {}, {:?}, {:?})",
-    dir_inode.ino, offset, entry, name);
   let mut entry_buffer = make_buffer(
     dir_entry_size(name.map(|n| n.len() as u64).unwrap_or(0)));
   try!(encode_dir_entry(&fs.superblock, entry, &mut entry_buffer[..]));
@@ -282,8 +352,6 @@ fn write_dir_entry(fs: &mut Filesystem, dir_inode: &mut Inode, offset: u64,
 fn write_dir_entry_rec_len(fs: &mut Filesystem, dir_inode: &mut Inode,
   offset: u64, rec_len: u16) -> Result<()>
 {
-  println!("write_dir_entry_rec_len(ino {}, offset {}, {})",
-    dir_inode.ino, offset, rec_len);
   let mut minibuf = [0; 2];
   encode_u16(rec_len, &mut minibuf[..]);
   try!(write_inode_data(fs, dir_inode, offset + 4, &minibuf[..]));
