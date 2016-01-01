@@ -51,6 +51,7 @@ fn write_group_desc(fs: &mut Filesystem, table_block: u64,
 {
   let offset = table_block * fs.block_size() + group_idx * 32;
   let mut desc_buf = make_buffer(32);
+  try!(fs.volume.read(offset, &mut desc_buf[..]));
   try!(encode_group_desc(&fs.superblock, desc, &mut desc_buf[..]));
   fs.volume.write(offset, &desc_buf[..])
 }

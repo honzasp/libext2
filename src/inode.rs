@@ -140,6 +140,7 @@ fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
 fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
+  try!(fs.volume.read(offset, &mut inode_buf[..]));
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
   fs.volume.write(offset, &inode_buf[..])
 }
