@@ -122,7 +122,6 @@ fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
 }
 
 fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
-  println!("write {:?}", inode);
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
@@ -181,7 +180,6 @@ fn dealloc_inode_blocks(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
 pub fn truncate_inode_blocks(fs: &mut Filesystem, inode: &mut Inode,
   first_block: u64) -> Result<()>
 {
-  println!("truncate_inode_blocks(ino {}, block {})", inode.ino, first_block);
   let (block1, block2, block3) =
     (inode.block[12] as u64, inode.block[13] as u64, inode.block[14] as u64);
   match inode_block_to_pos(fs, first_block) {
@@ -226,8 +224,6 @@ pub fn truncate_inode_blocks(fs: &mut Filesystem, inode: &mut Inode,
 fn truncate_indirect_block(fs: &mut Filesystem, inode: &mut Inode,
   block: u64, entry: u64, level: usize) -> Result<()>
 {
-  println!("truncate_indirect_block(ino {}, block {}, entry {}, level {})",
-    inode.ino, block, entry, level);
   for i in entry..fs.block_size() / 4 {
     let entry_block = try!(read_indirect(fs, block, i));
     if entry_block == 0 {
@@ -334,8 +330,6 @@ fn write_inode_block(fs: &mut Filesystem, inode: &mut Inode, inode_block: u64,
 fn write_indirect(fs: &mut Filesystem, indirect_block: u64,
   entry: u64, link: u64) -> Result<()> 
 {
-  println!("write_indirect(indirect {}, entry {}, link {})",
-    indirect_block, entry, link);
   let mut buffer = [0; 4];
   let entry_offset = indirect_block * fs.block_size() + entry * 4;
   assert!(entry < fs.block_size() / 4);

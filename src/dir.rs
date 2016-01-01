@@ -58,6 +58,38 @@ pub fn remove_from_dir(fs: &mut Filesystem, dir_ino: u64, name: &[u8])
   Ok(false)
 }
 
+pub fn move_between_dirs(fs: &mut Filesystem,
+  source_dir_ino: u64, source_name: &[u8],
+  target_dir_ino: u64, target_name: &[u8]) -> Result<bool>
+{
+  let mut source_dir_inode = try!(get_inode(fs, source_dir_ino));
+  let mut target_dir_inode = try!(get_inode(fs, target_dir_ino));
+
+  if source_dir_inode.mode.file_type != FileType::Dir {
+    return Err(Error::new(format!("source inode {} is not a directory", source_dir_ino)))
+  } else if target_dir_inode.mode.file_type != FileType::Dir {
+    return Err(Error::new(format!("target inode {} is not a directory", target_dir_ino)))
+  }
+
+  let mut offset = 0;
+  let mut prev_offset = 0;
+  while offset < source_dir_inode.size {
+    let (entry, entry_name, next_offset) =
+      try!(read_dir_entry(fs, &source_dir_inode, offset));
+    if entry.ino != 0 && source_name == &entry_name[..] {
+      let mut entry_inode = try!(get_inode(fs, entry.ino as u64));
+      try!(add_dir_entry(fs, &mut target_dir_inode, &mut entry_inode, target_name));
+      try!(unlink_inode(fs, &mut entry_inode));
+      try!(erase_dir_entry(fs, &mut source_dir_inode, offset, prev_offset, next_offset));
+      return Ok(true);
+    }
+    prev_offset = offset;
+    offset = next_offset;
+  }
+
+  Ok(false)
+}
+
 pub fn open_dir(fs: &mut Filesystem, ino: u64) -> Result<DirHandle> {
   let inode = try!(get_inode(fs, ino));
   if inode.mode.file_type == FileType::Dir {

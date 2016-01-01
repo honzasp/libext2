@@ -178,6 +178,21 @@ impl fuse::Filesystem for Fuse {
     }
   }
 
+  fn rename(&mut self, _req: &fuse::Request, parent: u64, name: &path::Path,
+    newparent: u64, newname: &path::Path, reply: fuse::ReplyEmpty)
+  {
+    println!("rename (old ino {}, old name {:?}, new ino {}, new name {:?})",
+      parent, name, newparent, newname);
+    match ext2::move_between_dirs(&mut self.fs,
+      ext2_ino(parent), name.as_os_str().as_bytes(),
+      ext2_ino(newparent), newname.as_os_str().as_bytes())
+    {
+      Err(_err) => { print_error(&_err); reply.error(65) },
+      Ok(false) => reply.error(libc::ENOENT),
+      Ok(true) => reply.ok(),
+    }
+  }
+
   fn open(&mut self, _req: &fuse::Request, ino: u64,
     _flags: u32, reply: fuse::ReplyOpen) 
   {
