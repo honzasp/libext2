@@ -11,12 +11,41 @@ pub fn get_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
   Ok(inode)
 }
 
+pub fn set_inode_mode_attr(fs: &mut Filesystem, ino: u64,
+  mode: Mode, attr: FileAttr) -> Result<()>
+{
+  let mut inode = try!(get_inode(fs, ino));
+  inode.mode = mode;
+  inode.attr = attr;
+  update_inode(fs, &mut inode)
+}
+
+pub fn truncate_inode_size(fs: &mut Filesystem, ino: u64, new_size: u64) -> Result<()> {
+  let mut inode = try!(get_inode(fs, ino));
+  if inode.mode.file_type != FileType::Regular {
+    return Err(Error::new(format!(
+      "Cannot truncate inode {} of type {:?}", ino, inode.mode.file_type)));
+  }
+
+  if new_size == 0 {
+    dealloc_inode_blocks(fs, &mut inode)
+  } else if inode.size < new_size {
+    return Err(Error::new(format!(
+      "Cannot truncate inode {} with size {} to size {}", ino, inode.size, new_size)));
+  } else {
+    let first_unused_block = (new_size + fs.block_size() - 1) / fs.block_size();
+    try!(truncate_inode_blocks(fs, &mut inode, first_unused_block));
+    inode.size = new_size;
+    update_inode(fs, &mut inode)
+  }
+}
+
 pub fn inode_mode_from_linux_mode(mode: u16) -> Result<Mode> {
   decode_inode_mode(mode)
 }
 
 pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
-  name: &[u8], mode: Mode) -> Result<Inode>
+  name: &[u8], mode: Mode, attr: FileAttr) -> Result<Inode>
 {
   let mut dir_inode = try!(get_inode(fs, dir_ino));
   if dir_inode.mode.file_type != FileType::Dir {
@@ -30,7 +59,7 @@ pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
     Some(ino) => ino,
   };
 
-  let mut new_inode = try!(init_inode(fs, &mut dir_inode, new_ino, mode));
+  let mut new_inode = try!(init_inode(fs, &mut dir_inode, new_ino, mode, attr));
   try!(add_dir_entry(fs, &mut dir_inode, &mut new_inode, name));
   Ok(new_inode)
 }
@@ -80,6 +109,7 @@ fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
 }
 
 fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
+  println!("write {:?}", inode);
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(encode_inode(&fs.superblock, inode, &mut inode_buf[..]));
@@ -95,14 +125,13 @@ fn locate_inode(fs: &mut Filesystem, ino: u64) -> Result<(u64, u64)> {
 }
 
 fn init_inode(fs: &mut Filesystem, dir_inode: &mut Inode,
-  ino: u64, mode: Mode) -> Result<Inode> 
+  ino: u64, mode: Mode, attr: FileAttr) -> Result<Inode> 
 {
   let mut inode = Inode {
     ino: ino,
     mode: mode,
-    uid: 0, gid: 0,
+    attr: attr,
     size: 0, size_512: 0,
-    atime: 0, ctime: 0, mtime: 0, dtime: 0,
     links_count: 0, flags: 0,
     block: [0; 15],
     file_acl: 0,
@@ -116,20 +145,90 @@ fn init_inode(fs: &mut Filesystem, dir_inode: &mut Inode,
 }
 
 fn remove_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
-  if !is_fast_symlink(fs, inode) {
-    for i in 0..15 {
-      if inode.block[i] != 0 {
-        if i < 12 {
-          try!(dealloc_block(fs, inode.block[i] as u64));
-        } else {
-          try!(dealloc_indirect_block(fs, inode.block[i] as u64, i - 11));
-        }
-      }
-    }
-  }
-
-  inode.dtime = 1451303454;
+  try!(dealloc_inode_blocks(fs, inode));
+  inode.attr.dtime = 1451303454;
   dealloc_inode(fs, inode.ino)
+}
+
+fn dealloc_inode_blocks(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
+  if !is_fast_symlink(fs, inode) {
+    for i in 0..12 {
+      let block = inode.block[i] as u64;
+      try!(dealloc_inode_block(fs, inode, block));
+    }
+    let (block1, block2, block3) =
+      (inode.block[12], inode.block[13], inode.block[14]);
+    try!(dealloc_indirect_block(fs, inode, block1 as u64, 1));
+    try!(dealloc_indirect_block(fs, inode, block2 as u64, 2));
+    try!(dealloc_indirect_block(fs, inode, block3 as u64, 3));
+  }
+  Ok(())
+}
+
+fn truncate_inode_blocks(fs: &mut Filesystem, inode: &mut Inode,
+  first_block: u64) -> Result<()>
+{
+  println!("truncate_inode_blocks(ino {}, block {})", inode.ino, first_block);
+  let (block1, block2, block3) =
+    (inode.block[12] as u64, inode.block[13] as u64, inode.block[14] as u64);
+  match inode_block_to_pos(fs, first_block) {
+    BlockPos::Level0(level0) => {
+      for i in level0 as usize..12 {
+        let block = inode.block[i] as u64;
+        try!(dealloc_inode_block(fs, inode, block));
+      }
+      try!(dealloc_indirect_block(fs, inode, block1, 1));
+      try!(dealloc_indirect_block(fs, inode, block2, 2));
+      try!(dealloc_indirect_block(fs, inode, block3, 3));
+      for i in level0 as usize..15 {
+        inode.block[i] = 0;
+      }
+    },
+    BlockPos::Level1(level0) => {
+      try!(truncate_indirect_block(fs, inode, block1, level0, 1));
+      try!(dealloc_indirect_block(fs, inode, block2, 2));
+      try!(dealloc_indirect_block(fs, inode, block3, 3));
+      inode.block[13] = 0;
+      inode.block[14] = 0;
+    },
+    BlockPos::Level2(level1, level0) => {
+      let block1 = try!(read_indirect(fs, block2, level1));
+      try!(truncate_indirect_block(fs, inode, block1, level0, 1));
+      try!(truncate_indirect_block(fs, inode, block2, level1, 2));
+      try!(dealloc_indirect_block(fs, inode, block3, 3));
+      inode.block[14] = 0;
+    },
+    BlockPos::Level3(level2, level1, level0) => {
+      let block2 = try!(read_indirect(fs, block3, level2));
+      let block1 = try!(read_indirect(fs, block2, level1));
+      try!(truncate_indirect_block(fs, inode, block1, level0, 1));
+      try!(truncate_indirect_block(fs, inode, block2, level1, 2));
+      try!(truncate_indirect_block(fs, inode, block3, level2, 3));
+    },
+    BlockPos::OutOfRange => (),
+  }
+  Ok(())
+}
+
+fn truncate_indirect_block(fs: &mut Filesystem, inode: &mut Inode,
+  block: u64, entry: u64, level: usize) -> Result<()>
+{
+  println!("truncate_indirect_block(ino {}, block {}, entry {}, level {})",
+    inode.ino, block, entry, level);
+  for i in entry..fs.block_size() / 4 {
+    let entry_block = try!(read_indirect(fs, block, i));
+    if entry_block == 0 {
+      continue;
+    }
+
+    if level == 1 {
+      try!(dealloc_inode_block(fs, inode, entry_block));
+    } else {
+      try!(dealloc_indirect_block(fs, inode, entry_block, level - 1));
+    }
+    try!(write_indirect(fs, block, i, 0));
+  }
+  Ok(())
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -222,6 +321,8 @@ fn write_inode_block(fs: &mut Filesystem, inode: &mut Inode, inode_block: u64,
 fn write_indirect(fs: &mut Filesystem, indirect_block: u64,
   entry: u64, link: u64) -> Result<()> 
 {
+  println!("write_indirect(indirect {}, entry {}, link {})",
+    indirect_block, entry, link);
   let mut buffer = [0; 4];
   let entry_offset = indirect_block * fs.block_size() + entry * 4;
   assert!(entry < fs.block_size() / 4);
@@ -259,20 +360,34 @@ fn alloc_indirect_block(fs: &mut Filesystem, inode: &mut Inode) -> Result<u64> {
   Ok(block)
 }
 
-fn dealloc_indirect_block(fs: &mut Filesystem, indirect_block: u64,
-  level: usize) -> Result<()> 
+fn dealloc_inode_block(fs: &mut Filesystem, inode: &mut Inode,
+  block: u64) -> Result<()>
 {
+  if block == 0 {
+    return Ok(())
+  }
+  inode.size_512 -= (fs.block_size() / 512) as u32;
+  dealloc_block(fs, block)
+}
+
+fn dealloc_indirect_block(fs: &mut Filesystem, inode: &mut Inode,
+  indirect_block: u64, level: usize) -> Result<()> 
+{
+  if indirect_block == 0 {
+    return Ok(())
+  }
   let block_size = fs.block_size();
   let mut buffer = make_buffer(block_size);
   try!(fs.volume.read(indirect_block * block_size, &mut buffer[..]));
   for i in 0..block_size / 4 {
     let block = decode_u32(&buffer[i as usize * 4..]) as u64;
     if block != 0 && level > 1 {
-      try!(dealloc_indirect_block(fs, block, level - 1));
+      try!(dealloc_indirect_block(fs, inode, block, level - 1));
     } else if block != 0 {
-      try!(dealloc_block(fs, block));
+      try!(dealloc_inode_block(fs, inode, block));
     }
   }
+  inode.size_512 -= (fs.block_size() / 512) as u32;
   dealloc_block(fs, indirect_block)
 }
 
@@ -382,12 +497,13 @@ fn inode_block_to_pos(fs: &Filesystem, inode_block: u64) -> BlockPos {
   } else if inode_block < 12 + indirect_1_size {
     BlockPos::Level1(inode_block - 12)
   } else if inode_block < 12 + indirect_1_size + indirect_2_size {
-    BlockPos::Level2((inode_block - 12) / indirect_1_size,
-      (inode_block - 12) % indirect_1_size)
+    let base = inode_block - 12 - indirect_1_size;
+    BlockPos::Level2(base / indirect_1_size, base % indirect_1_size)
   } else if inode_block < 12 + indirect_1_size + indirect_2_size + indirect_3_size {
-    BlockPos::Level3((inode_block - 12) / indirect_2_size,
-      ((inode_block - 12) % indirect_2_size) / indirect_1_size,
-      ((inode_block - 12) % indirect_2_size) % indirect_1_size)
+    let base = inode_block - 12 - indirect_1_size - indirect_2_size;
+    BlockPos::Level3(base / indirect_2_size,
+      (base % indirect_2_size) / indirect_1_size,
+      (base % indirect_2_size) % indirect_1_size)
   } else {
     BlockPos::OutOfRange
   }

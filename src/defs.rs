@@ -51,14 +51,9 @@ pub struct GroupDesc {
 pub struct Inode {
   pub ino: u64,
   pub mode: Mode,
-  pub uid: u32,
-  pub gid: u32,
+  pub attr: FileAttr,
   pub size: u64,
   pub size_512: u32,
-  pub atime: u32,
-  pub ctime: u32,
-  pub mtime: u32,
-  pub dtime: u32,
   pub links_count: u16,
   pub flags: u32,
   pub block: [u32; 15],
@@ -72,6 +67,16 @@ pub struct Mode {
   pub sgid: bool,
   pub sticky: bool,
   pub access_rights: u16,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct FileAttr {
+  pub uid: u32,
+  pub gid: u32,
+  pub atime: u32,
+  pub ctime: u32,
+  pub mtime: u32,
+  pub dtime: u32,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

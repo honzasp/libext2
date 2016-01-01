@@ -72,6 +72,51 @@ impl fuse::Filesystem for Fuse {
     }
   }
 
+  fn setattr(&mut self, _req: &fuse::Request, ino: u64, mode: Option<u32>,
+    uid: Option<u32>, gid: Option<u32>,
+    size: Option<u64>,
+    atime: Option<time::Timespec>, mtime: Option<time::Timespec>, 
+    _fh: Option<u64>,
+    _crtime: Option<time::Timespec>, chgtime: Option<time::Timespec>,
+    _bkuptime: Option<time::Timespec>, _flags: Option<u32>,
+    reply: fuse::ReplyAttr)
+  {
+    println!("setattr (ino {}, uid {:?}, gid {:?}, size {:?}, ...)",
+      ino, uid, gid, size);
+
+    fn to_seconds(time: time::Timespec) -> u32 { time.sec as u32 }
+
+    let res: Result<_, ext2::Error> = (|| {
+      if let Some(new_size) = size {
+        try!(ext2::truncate_inode_size(&mut self.fs, ext2_ino(ino), new_size))
+      }
+
+      let inode = try!(ext2::get_inode(&mut self.fs, ext2_ino(ino)));
+
+      let new_mode = match mode {
+        Some(new_mode) => try!(ext2::inode_mode_from_linux_mode(new_mode as u16)),
+        None => inode.mode,
+      };
+
+      let new_attr = ext2::FileAttr {
+        uid: uid.unwrap_or(0),
+        gid: gid.unwrap_or(0),
+        atime: atime.map(to_seconds).unwrap_or(inode.attr.atime),
+        ctime: chgtime.map(to_seconds).unwrap_or(inode.attr.ctime),
+        mtime: mtime.map(to_seconds).unwrap_or(inode.attr.mtime),
+        .. inode.attr
+      };
+
+      try!(ext2::set_inode_mode_attr(&mut self.fs, ext2_ino(ino), new_mode, new_attr));
+      ext2::get_inode(&mut self.fs, ext2_ino(ino))
+    })();
+
+    match res {
+      Err(_err) => reply.error(65),
+      Ok(inode) => reply.attr(&TTL, &inode_to_file_attr(&inode)),
+    }
+  }
+
   fn readlink(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyData) {
     println!("readlink (ino {})", ino);
     match ext2::read_link(&mut self.fs, ext2_ino(ino)) {
@@ -86,7 +131,8 @@ impl fuse::Filesystem for Fuse {
     println!("mknod (ino {}, name {:?}, mode {:x})", parent, name, mode);
     let res: Result<_, ext2::Error> = (|| {
       ext2::make_inode_in_dir(&mut self.fs, ext2_ino(parent),
-        name.as_os_str().as_bytes(), try!(ext2_mode(mode as u16)))
+        name.as_os_str().as_bytes(), try!(ext2_mode(mode as u16)),
+        ext2::FileAttr { uid: 0, gid: 0, atime: 0, ctime: 0, mtime: 0, dtime: 0 })
     })();
     match res {
       Err(_err) => reply.error(65),
@@ -290,15 +336,15 @@ fn inode_to_file_attr(inode: &ext2::Inode) -> fuse::FileAttr {
     ino: inode.ino,
     size: inode.size,
     blocks: inode.size_512 as u64,
-    atime: fuse_timespec(inode.atime),
-    ctime: fuse_timespec(inode.ctime),
-    mtime: fuse_timespec(inode.mtime),
+    atime: fuse_timespec(inode.attr.atime),
+    ctime: fuse_timespec(inode.attr.ctime),
+    mtime: fuse_timespec(inode.attr.mtime),
     crtime: fuse_timespec(0),
     kind: fuse_file_type(inode.mode.file_type),
     perm: inode.mode.access_rights,
     nlink: inode.links_count as u32,
-    uid: inode.uid,
-    gid: inode.gid,
+    uid: inode.attr.uid,
+    gid: inode.attr.gid,
     rdev: 0,
     flags: 0,
   }

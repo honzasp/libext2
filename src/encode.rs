@@ -41,10 +41,10 @@ pub fn encode_inode(superblock: &Superblock, inode: &Inode,
   assert!(bytes.len() >= 128);
   encode_u16(encode_inode_mode(&inode.mode), &mut bytes[0..]);
 
-  encode_u16((inode.uid & 0xffff) as u16, &mut bytes[2..]);
-  encode_u16(((inode.uid >> 16) & 0xffff) as u16, &mut bytes[120..]);
-  encode_u16((inode.gid & 0xffff) as u16, &mut bytes[24..]);
-  encode_u16(((inode.gid >> 16) & 0xffff) as u16, &mut bytes[122..]);
+  encode_u16((inode.attr.uid & 0xffff) as u16, &mut bytes[2..]);
+  encode_u16(((inode.attr.uid >> 16) & 0xffff) as u16, &mut bytes[120..]);
+  encode_u16((inode.attr.gid & 0xffff) as u16, &mut bytes[24..]);
+  encode_u16(((inode.attr.gid >> 16) & 0xffff) as u16, &mut bytes[122..]);
 
   encode_u32((inode.size & 0xffffffff) as u32, &mut bytes[4..]);
   if (inode.size >> 32) != 0 && superblock.rev_level < 1 {
@@ -59,10 +59,10 @@ pub fn encode_inode(superblock: &Superblock, inode: &Inode,
     encode_u32(inode.block[i], &mut bytes[40 + 4*i..]);
   }
 
-  encode_u32(inode.atime, &mut bytes[8..]);
-  encode_u32(inode.ctime, &mut bytes[12..]);
-  encode_u32(inode.mtime, &mut bytes[16..]);
-  encode_u32(inode.dtime, &mut bytes[20..]);
+  encode_u32(inode.attr.atime, &mut bytes[8..]);
+  encode_u32(inode.attr.ctime, &mut bytes[12..]);
+  encode_u32(inode.attr.mtime, &mut bytes[16..]);
+  encode_u32(inode.attr.dtime, &mut bytes[20..]);
   encode_u16(inode.links_count, &mut bytes[26..]);
   encode_u32(inode.size_512, &mut bytes[28..]);
   encode_u32(inode.flags, &mut bytes[32..]);
