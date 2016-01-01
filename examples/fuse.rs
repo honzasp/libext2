@@ -187,9 +187,21 @@ impl fuse::Filesystem for Fuse {
       ext2_ino(parent), name.as_os_str().as_bytes(),
       ext2_ino(newparent), newname.as_os_str().as_bytes())
     {
-      Err(_err) => { print_error(&_err); reply.error(65) },
+      Err(_err) => reply.error(65),
       Ok(false) => reply.error(libc::ENOENT),
       Ok(true) => reply.ok(),
+    }
+  }
+
+  fn link(&mut self, _req: &fuse::Request, ino: u64,
+    newparent: u64, newname: &path::Path, reply: fuse::ReplyEntry)
+  {
+    println!("link (link {}, new ino {}, new name {:?})", ino, newparent, newname);
+    match ext2::make_hardlink_in_dir(&mut self.fs,
+      ext2_ino(newparent), newname.as_os_str().as_bytes(), ext2_ino(ino))
+    {
+      Err(_err) => reply.error(65),
+      Ok(inode) => reply.entry(&TTL, &inode_to_file_attr(&inode), 0),
     }
   }
 
