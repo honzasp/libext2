@@ -64,6 +64,19 @@ pub fn make_inode_in_dir(fs: &mut Filesystem, dir_ino: u64,
   Ok(new_inode)
 }
 
+pub fn make_symlink_in_dir(fs: &mut Filesystem, dir_ino: u64,
+  name: &[u8], link: &[u8], attr: FileAttr) -> Result<Inode>
+{
+  let mode = Mode {
+    file_type: FileType::Symlink,
+    suid: false, sgid: false, sticky: false,
+    access_rights: 0o777,
+  };
+  let mut inode = try!(make_inode_in_dir(fs, dir_ino, name, mode, attr));
+  try!(write_link_data(fs, &mut inode, link));
+  Ok(inode)
+}
+
 pub fn unlink_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
   if inode.mode.file_type == FileType::Dir {
     if !try!(is_dir_empty(fs, inode)) {
@@ -165,7 +178,7 @@ fn dealloc_inode_blocks(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
   Ok(())
 }
 
-fn truncate_inode_blocks(fs: &mut Filesystem, inode: &mut Inode,
+pub fn truncate_inode_blocks(fs: &mut Filesystem, inode: &mut Inode,
   first_block: u64) -> Result<()>
 {
   println!("truncate_inode_blocks(ino {}, block {})", inode.ino, first_block);

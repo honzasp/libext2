@@ -165,6 +165,19 @@ impl fuse::Filesystem for Fuse {
     self.unlink(req, parent, name, reply)
   }
 
+  fn symlink(&mut self, _req: &fuse::Request, parent: u64,
+    name: &path::Path, link: &path::Path, reply: fuse::ReplyEntry)
+  {
+    println!("symlink (ino {}, name {:?}, link {:?})", parent, name, link);
+    match ext2::make_symlink_in_dir(&mut self.fs, ext2_ino(parent),
+      name.as_os_str().as_bytes(), link.as_os_str().as_bytes(),
+      ext2::FileAttr { uid: 0, gid: 0, atime: 0, ctime: 0, mtime: 0, dtime: 0 })
+    {
+      Err(_err) => reply.error(65),
+      Ok(inode) => reply.entry(&TTL, &inode_to_file_attr(&inode), 0),
+    }
+  }
+
   fn open(&mut self, _req: &fuse::Request, ino: u64,
     _flags: u32, reply: fuse::ReplyOpen) 
   {
