@@ -8,5 +8,7 @@ pub use file::*;
 pub use fs::*;
 pub use group::*;
 pub use inode::*;
+pub use inode_data::*;
 pub use link::*;
+pub use make_in_dir::*;
 pub use volume::{Volume};
