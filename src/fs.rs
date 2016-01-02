@@ -1,5 +1,5 @@
 use std::{iter};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use prelude::*;
 
 pub struct Filesystem {
@@ -8,8 +8,10 @@ pub struct Filesystem {
   pub superblock_bytes: Vec<u8>,
   pub superblock_dirty: bool,
   pub groups: Vec<Group>,
-  pub inodes: HashMap<u64, Inode>,
+  pub inode_cache: HashMap<u64, Inode>,
   pub dirty_inos: HashSet<u64>,
+  pub reused_inos: HashSet<u64>,
+  pub cache_queue: VecDeque<u64>,
 }
 
 pub struct Group {
@@ -43,8 +45,10 @@ pub fn mount_fs(mut volume: Box<Volume>) -> Result<Filesystem> {
     superblock_bytes: superblock_bytes,
     superblock_dirty: false,
     groups: Vec::new(),
-    inodes: HashMap::new(),
+    inode_cache: HashMap::new(),
     dirty_inos: HashSet::new(),
+    reused_inos: HashSet::new(),
+    cache_queue: VecDeque::new(),
   };
 
   for group_idx in 0..fs.group_count() {

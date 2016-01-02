@@ -1,14 +1,67 @@
 use prelude::*;
 
 pub fn get_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
-  match fs.inodes.get(&ino) {
-    Some(inode) => return Ok(inode.clone()),
-    None => (),
+  if let Some(inode) = fs.inode_cache.get(&ino) {
+    fs.reused_inos.insert(ino);
+    return Ok(inode.clone())
   }
+
   let inode = try!(read_inode(fs, ino));
-  fs.inodes.insert(ino, inode.clone());
+  fs.inode_cache.insert(ino, inode.clone());
+  fs.cache_queue.push_back(ino);
+  try!(refit_inode_cache(fs));
   Ok(inode)
 }
+
+pub fn update_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
+  use std::collections::hash_map::Entry;
+
+  fs.dirty_inos.insert(inode.ino);
+  match fs.inode_cache.entry(inode.ino) {
+    Entry::Occupied(mut occupied) => {
+      occupied.insert(inode.clone());
+      fs.reused_inos.insert(inode.ino);
+      return Ok(())
+    },
+    Entry::Vacant(vacant) => {
+      vacant.insert(inode.clone());
+      fs.cache_queue.push_back(inode.ino);
+    },
+  }
+
+  refit_inode_cache(fs)
+}
+
+fn refit_inode_cache(fs: &mut Filesystem) -> Result<()> {
+  while fs.inode_cache.len() > 10 {
+    let mut flushed = false;
+
+    while let Some(used_ino) = fs.cache_queue.pop_front() {
+      if fs.reused_inos.remove(&used_ino) {
+        try!(flush_ino(fs, used_ino));
+        flushed = true;
+        break;
+      }
+    }
+
+    if !flushed {
+      let random_ino = *fs.inode_cache.iter().next().unwrap().0;
+      try!(flush_ino(fs, random_ino));
+    }
+  }
+  Ok(())
+}
+
+pub fn flush_ino(fs: &mut Filesystem, ino: u64) -> Result<()> {
+  if let Some(inode) = fs.inode_cache.remove(&ino) {
+    fs.reused_inos.remove(&ino);
+    if fs.dirty_inos.remove(&ino) {
+      return write_inode(fs, &inode);
+    }
+  }
+  Ok(())
+}
+
 
 pub fn set_inode_mode_attr(fs: &mut Filesystem, ino: u64,
   mode: Mode, attr: FileAttr) -> Result<()>
@@ -65,29 +118,14 @@ pub fn unlink_inode(fs: &mut Filesystem, inode: &mut Inode) -> Result<()> {
   update_inode(fs, inode)
 }
 
-pub fn update_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
-  fs.inodes.insert(inode.ino, inode.clone());
-  fs.dirty_inos.insert(inode.ino);
-  Ok(())
-}
-
-pub fn flush_ino(fs: &mut Filesystem, ino: u64) -> Result<()> {
-  if let Some(inode) = fs.inodes.remove(&ino) {
-    if fs.dirty_inos.remove(&ino) {
-      return write_inode(fs, &inode);
-    }
-  }
-  Ok(())
-}
-
-fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
+pub fn read_inode(fs: &mut Filesystem, ino: u64) -> Result<Inode> {
   let (offset, inode_size) = try!(locate_inode(fs, ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(fs.volume.read(offset, &mut inode_buf[..]));
   decode_inode(&fs.superblock, ino, &inode_buf[..])
 }
 
-fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
+pub fn write_inode(fs: &mut Filesystem, inode: &Inode) -> Result<()> {
   let (offset, inode_size) = try!(locate_inode(fs, inode.ino));
   let mut inode_buf = make_buffer(inode_size);
   try!(fs.volume.read(offset, &mut inode_buf[..]));
