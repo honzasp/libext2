@@ -1,0 +1,128 @@
+\chapter{Motivation}
+
+File system is a format for saving hierarchies of large sequences of bytes,
+decorated with some metadata, in a linear address space. These formats are
+understood by operating systems and abstracted away to provide uniform model of
+files.
+
+Ext2 is a file system developed for Linux. Even though it has been mostly
+replaced by its newer revisions ext3 and ext4, it remains essentially backwards
+compatible (at least for reading). The main difference between ext2 and ext3 is
+that the latter supports journaling, which enhances performance and reliability
+by storing updates in a journal and replaying them later, while always keeping
+the device in a consistent state.
+
+\section{Non-blocking IO}
+
+Non-blocking IO (also referred to as asynchronous IO) means that a thread
+willing to perform an IO operation is not suspended until the operation
+finishes, but immediately continues executing. Later, when the operating system
+finishes the request, the thread is notified and can handle the results. This is
+usually accomplished by having the thread sitting in an event-loop, waiting for
+events from the OS and dispatching them to registered handlers.
+
+The other approach, blocking IO, is more usual, but has various downsides.
+First, while the process is waiting for an IO to happen, it is blocked and
+cannot get other things done. This works fine for processes that start by
+reading input, then get hot for a while and finish by writing output, it would
+be disastrous for any (soft) real-time process that has to respond to requests
+coming from the outside.
+
+The only way to make things happen while your thread is blocked is to spawn
+another thread. To do $n$ things at once, you need at least $n$ threads.
+However, there are few tools widely available in modern programming environments
+as dangerous as a thread. It is nearly impossible for mere mortals to properly
+coordinate so many threads and avoid all race conditions. Moreover, when the $n$
+things to be done are just waiting for events, we are paying the non-negligible
+cost of a thread only to make it sleep 99.9~\% of its lifetime.
+
+Event-driven programming avoids the thread coordination hell, because there is
+only one thread running at a time, so no race conditions can occur while an
+event handler is executing. On the other hand, the sequencing constructs
+provided by the programming language can no longer be used to sequence IO. For
+example, when we want to load a list of funny pictures, blend them together and
+save them to a file using blocking IO, we can use the usual tools of our
+programming language:\footnote{In the code, I use \texttt{\textbackslash} to say
+$\lambda$, because \LaTeX is, well, complicated.}
+
+\begin{ttcode}
+blend_pictures = \(files) {
+  pictures = for file in files { read_picture(file) }
+  blended = blend_pictures(pictures)
+  write_picture(blended, "blended.jpg")
+}
+\end{ttcode}
+
+Note that the usual tools for composing computations worked well for composing
+IO operations. On the other hand, when we use callbacks to achieve the same
+effects with non-blocking IO, we end up with something like: \footnote{Of
+course, this works only if we have a garbage collector, so that the values
+captured in the closures do not get destroyed too early.}
+
+\begin{ttcode}
+blend_pictures = \(files, blend_callback) {
+  load_pictures = \(files, pictures, load_callback) {
+    if empty?(files)
+      load_callback(pictures)
+    else
+      read_picture(head(files), \(picture) {
+        load_pictures(tail(files), cons(picture, pictures), load_callback)
+      })
+  }
+
+  load_pictures(reverse(files), \(pictures) {
+    blended = blend_pictures(pictures)
+    write_picture(blended, "blended.jpg", blend_callback)
+  }
+}
+\end{ttcode}
+
+It is instructive to see that when imperative constructs fail, the functional
+come to the rescue.\footnote{Another instance of this phenomenon is so-called
+Visitor desing pattern -- this is exactly the way how variants are encoded in
+pure $\lambda$-calculus. For me, using such a convoluted way to encode something
+so obvious feels like I needed to write \texttt{[->+<]} to move a value between
+variables :-)} Indeed, help comes from the language that has no imperative
+constructs -- Haskell -- in the form of \texttt{IO} monad. When we use a monad
+only to capture the results and allow ourselves side-effects, such a monad is
+called a future: 
+
+\begin{ttcode}
+blend_pictures = \(files) {
+  future_map(files, \(file) {
+    read_picture(file) 
+  }).then(\(pictures) {
+    blended = blend_pictures(pictures)
+    write_picture(blended, "blended.jpg")
+  })
+}
+\end{ttcode}
+
+A future represents a computation whose result will be known in the future.
+Futures can be composed to produce other futures using various combinators (like
+\texttt{future_map} or \texttt{.then} in our example). They allow us to use
+non-blocking IO with little cognitive overhead compared to blocking IO.
+
+\section{Rust}
+
+Rust is a systems programming language developed at Mozilla Research. It
+guarantees memory safety without garbage collector by statically checking
+ownership of values and lifetimes of references. The type system also prevents
+data races between threads. Compared to \Cplusplus, probably its closest
+competitor, it is much more modern, featuring type inference, traits (similar to
+type classes in Haskell), rich data types and pattern matching, to name a few.
+
+\section{Personal motivation}
+
+In summer 2015, I was working for a startup named Bileto on a public transport
+routing engine. The engine was written in \Cplusplus, because the speed of the
+algorithm was crucial. However, the service needed to communicate with many
+other servers over the network, so that the size code that managed the
+communication exceeded the size of the algorithms that did the actual work. This
+IO code was originally using blocking IO and many threads, but I rewrote it to
+non-blocking using \texttt{libev} and a home-made library of futures and
+promises.
+
+I knew and used Rust before for my personal projects, mainly for a compiler that
+I developed for my maturita exam, so I naturally was quite interested in how
+Rust could be used to solve similar problems.

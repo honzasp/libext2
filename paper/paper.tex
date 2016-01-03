@@ -1,0 +1,78 @@
+\documentclass[a4paper,twoside,11pt,openany]{memoir}
+\usepackage{geometry}
+\usepackage[greek,english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{listings}
+\usepackage{lmodern}
+\usepackage{syntax}
+\usepackage[fixlanguage]{babelbib}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{changepage}
+\usepackage[htt]{hyphenat}
+\usepackage{chngcntr}
+
+\geometry{
+  marginparsep=0cm,marginparwidth=0cm,
+  inner=3.0cm,outer=2.0cm,
+  top=2cm,bottom=2cm,
+}
+
+\chapterstyle{article}
+\pagestyle{plain}
+
+\counterwithout{footnote}{chapter}
+
+\selectbiblanguage{english}
+
+\lstdefinelanguage{Rust}{
+  keywords={program,module,export,fun,var,import,
+  if,cond,when,unless,do,and,or,begin,let,lambda,extend},
+}
+
+\lstdefinestyle{ttcode}{
+  basicstyle=\small\ttfamily,
+  keywordstyle=\bfseries,
+  flexiblecolumns=false,
+  basewidth=0.5em,
+  texcl=true,
+  showstringspaces=false,
+}
+
+\lstdefinestyle{rust}{style=ttcode,language=Rust}
+
+\lstnewenvironment{rust}[1][]{\lstset{style=rust,#1}}{}
+\lstnewenvironment{ttcode}[1][]{\lstset{style=ttcode,#1}}{}
+
+\DisableLigatures[>,<]{encoding = T1,family=tt*} %
+
+\def\Cplusplus{{C\nolinebreak[4]\hspace{-.05em}\raisebox{.4ex}{\tiny\bfseries ++}}}
+
+\hypersetup{
+  unicode=true,
+  pdftitle={An ext2 library},
+  pdfauthor={Jan Špaček},
+  hidelinks,
+  linktoc=all,
+}
+
+\newcounter{dummy}
+
+\begin{document}
+%\frontmatter
+%\input{tex/front.tex}
+
+\mainmatter
+\input{tex/intro.tex}
+\input{tex/motivation.tex}
+\input{tex/highlevel.tex}
+\input{tex/lowlevel.tex}
+\input{tex/morale.tex}
+
+\backmatter
+\bibliographystyle{babplain}
+\bibliography{references}
+\end{document}
