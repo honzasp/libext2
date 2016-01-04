@@ -1,4 +1,4 @@
-\documentclass[a4paper,twoside,11pt,openany]{memoir}
+\documentclass[a4paper,oneside,11pt,article]{memoir}
 \usepackage{geometry}
 \usepackage[greek,english]{babel}
 \usepackage[T1]{fontenc}
@@ -17,7 +17,7 @@
 
 \geometry{
   marginparsep=0cm,marginparwidth=0cm,
-  inner=3.0cm,outer=2.0cm,
+  inner=3.0cm,outer=3.0cm,
   top=2cm,bottom=2cm,
 }
 
@@ -62,10 +62,8 @@
 \newcounter{dummy}
 
 \begin{document}
-%\frontmatter
-%\input{tex/front.tex}
+\input{tex/front.tex}
 
-\mainmatter
 \input{tex/intro.tex}
 \input{tex/motivation.tex}
 \input{tex/highlevel.tex}

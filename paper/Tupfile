@@ -5,7 +5,7 @@ RERUNBIB = "No file.*.bbl|Citation.*undefined"
   (egrep -q $(RERUNBIB) %B.log && bibtex %B; true) && \
   (egrep -q $(RERUN) %B.log && pdflatex %B; true) && \
   (egrep -q $(RERUN) %B.log && pdflatex %B; true) \
-  |> | %B.aux %B.log %B.out %B.toc %B.blg %B.bbl
+  |> | %B.aux %B.log %B.out %B.blg %B.bbl
 
 : paper.tex |> !pdflatex |> paper.pdf
 
