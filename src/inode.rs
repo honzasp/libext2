@@ -37,10 +37,12 @@ fn refit_inode_cache(fs: &mut Filesystem) -> Result<()> {
     let mut flushed = false;
 
     while let Some(used_ino) = fs.cache_queue.pop_front() {
-      if fs.reused_inos.remove(&used_ino) {
+      if !fs.reused_inos.remove(&used_ino) {
         try!(flush_ino(fs, used_ino));
         flushed = true;
         break;
+      } else {
+        fs.cache_queue.push_back(used_ino);
       }
     }
 
