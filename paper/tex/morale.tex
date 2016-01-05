@@ -12,18 +12,19 @@ safety without any runtime overhead, but we pay for the performance by having to
 think about lifetimes and memory management when designing data structures and
 control flow. For me, the first obstacles I encountered when trying to implement
 asynchronous operation were so high that I had to give up the major goal of the
-project. Now, I regret I did not try harder.\footnote{In fact, when I learned I
-would not get a library able to asynchronously read a file without writing the
-library myself, I gave up almost immediately.}
+project. Now, I regret I did not try harder, but it is true that the language
+definitely stood in the way.\footnote{In fact, when I learned I would not get a
+library able to asynchronously read a file without writing the library myself, I
+gave up almost immediately.}
 
 Of course, there is the other side of the aforementioned trade-off. While it
 took some time to persuade the compiler to accept my code, nearly all of the
 errors it produced were genuine mistakes that I have made. Using a language with
 less static guarantees, I would have to find the mistakes by trial-and-error and
 probably would have to be serious with tests. This way, my code usually worked
-for the first time and there were relatively few cases when I had to debug the
-code. The greatest help was \texttt{e2fsck}, a tool to check and repair ext2
-filesystems. I was also pleasantly surprised that \texttt{lldb}) worked very
+for the first time and there were relatively few cases when I had to hunt bugs.
+The greatest help was \texttt{e2fsck}, a tool to check and repair ext2
+filesystems. I was also pleasantly surprised that \texttt{lldb} worked very
 well with Rust, in fact it worked better than with (GCC-compiled) \Cplusplus{}.
 And, of course, I did not encounter a single segfault or any memory safety
 violation.

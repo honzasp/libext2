@@ -2,13 +2,13 @@
 
 Of course, my plans failed miserably. Indeed, I could not even find a Rust
 library that would allow me to read from a file asynchronously and I should soon
-find that the design principles that worked for \Cplusplus{} did not work well in
-Rust.  Designing data structures and control flow is much more demanding when
-the type system must be assured that everything is OK. When I think about it
-now, I should probably try harder, but I quickly decided to throw in the towel
-and implement the library first synchronously, and maybe rewrite it later, armed
-with the experience gained on the road. This rewrite is now unlikely, so I will
-present the synchronous version from now on.
+find that the design principles that worked for \Cplusplus{} could not be
+directly translated to Rust.  Designing data structures and control flow is much
+more demanding when the type system must be assured that everything is OK. When
+I think about it now, I should have probably tried harder, but I quickly decided
+to throw in the towel and implement the library first synchronously, and maybe
+rewrite it later, armed with the experience gained on the road. This rewrite is
+now unlikely, so I will present the synchronous version from now on.
 
 \section{File system structure}
 
@@ -26,8 +26,8 @@ directory.
 The first 12 blocks of data are referenced directly from the inode. Then there
 is a reference to an indirect block, that contains an array of references to
 next blocks. Then there is a doubly indirect block, that references another
-indirect blocks, and finally a trebly indirect block referencing following
-doubly indirect blocks.
+indirect blocks, and finally a trebly indirect block referencing doubly indirect
+blocks.
 
 The directories are just special files that contain a linked list of entries.
 There are various restrictions on this list (for example, no entry can cross
@@ -51,12 +51,12 @@ to organize the work into several layers, inspired by \cite{sicp}: the lowest
 layer would deal with the raw bytes, the next layer would manage inodes and
 inode data blocks and the top layer would provide high-level access to files and
 directories. However, the boundaries between the layers were not very clear and
-I was afraid of over-abstraction, so I abandoned this model.
+I wanted to avoid over-abstraction, so I abandoned this model.
 
 Then I attempted to organize the code around the objects. The procedures dealing
 with inodes would become methods of the \texttt{Inode} object, the procedures
 for working with groups would be associated with \texttt{Group} and so on. This
-would work without a little trouble: 90~\% of the code deals with inodes, so I
+would work with a little problem: 90~\% of the code deals with inodes, so I
 ended up with one huge module defining the inode with small modules orbiting
 around it.
 
@@ -71,7 +71,7 @@ various data structures, \texttt{inode} for generic operations on inodes,
 
 Every module in Rust automatically defines a namespace, but I considered it too
 painful to prefix every function with the name of the module that it is defined
-it, so I created a module named \texttt{prelude} that reexports (or, as Rust
+in, so I created a module named \texttt{prelude} that reexports (or, as Rust
 says, \texttt{pub}licly \texttt{use}s) all names from all modules. However, only
 \texttt{pub}lic names are available outside of modules. Also, the structure of
 modules is not visible to users, because the library exports only a carefully

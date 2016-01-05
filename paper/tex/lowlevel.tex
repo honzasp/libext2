@@ -2,16 +2,16 @@
 
 The central structure is the \texttt{Filesystem}. It stores a copy of the
 superblock, copies of all group descriptors and a cache of inodes. When the
-superblock or any of the group descriptors needs to be updated, it is first
+superblock or any of the group descriptors need to be updated, they are first
 modified only in memory and marked as dirty. Later, the changes are written to
 disk. This saves us a lot of IO, because the superblock and block descriptors
 are changed quite often (they store the count of free block or free inodes, for
 example).
 
-Inodes are accessed very often, so they are also cached. However, we cannot
-afford to store all inodes in memory, so the size of the cache is
-limited.\footnote{I need to confess to a sin: the size of the cache is given as
-a literal in the function that clears the cache, not as a properly named
+Inodes are usually accessed repeatedly, so they are also cached. However, we
+cannot afford to store all inodes in memory, so the size of the cache is
+limited.\footnote{I need to confess that the size of the cache is given as a
+  literal in the function that clears the cache, not as a properly named
 constant or a piece of configuration.} The algorithm that decides which inode
 will be removed from the cache and which will stay alive is simple: all inodes
 are placed in a queue in the order they are read to memory. When there are too
@@ -19,12 +19,12 @@ many inodes in memory, the inode from the other side of the queue is removed. To
 keep frequently used inodes in memory, an inode is marked as reused when it is
 read or written. When the inode from the front of the queue is marked as reused,
 it will be enqueued again and not removed, but the mark will not be preserved.
-The cache is write-back, the modifications are kept in the cache and written to
-disk when the inode is removed from the cache.
+The cache is write-back so, the modifications are kept in the cache and written
+to disk when the inode is removed from the cache.
 
 The user always references inodes by their number.\footnote{In the code, I used
 a convention that \texttt{ino} means inode number, while \texttt{inode} refers
-to the \texttt{Inode} structure.}. Most of the code passes around references to
+to the \texttt{Inode} structure.} Most of the code passes around references to
 \texttt{Inode}s and does not directly read or write the inode from the
 filesystem. However, care must be taken to keep the \texttt{Inode}s in
 circulation and inodes on disk (or in cache) in sync. If a piece of code
@@ -37,7 +37,7 @@ disk, so they need to be encoded and decoded manually. This brings a small
 performance penalty and a small decrease in memory consumption (we do not decode
 all the fields and include no padding for future extension), but the main reason
 is that this approach is safe, because we do not hazard with the memory
-guarantees of the language, convenient, mostly because we can use
+guarantees of the language. It is also convenient, mostly because we can use
 \texttt{enum}s, and portable, because the data on disk is always stored in
 little-endian. There is a caveat, however: because we ignore some of the bytes
 when decoding inodes and superblocks, we must first read the corresponding byte
@@ -55,20 +55,21 @@ Error handling is managed via standard Rust approach, the \texttt{Result} type
 and \texttt{try!} macro. \texttt{Result} is a simple algebraic data type with
 two variants representing either success or an error (like \texttt{Either} in
 Haskell). Explicitly checking every return value would be painful,\footnote{This
-is the preferred way of handling errors in Go. This is also the main reason why
-I do not really like Go.} while using the monadic combinators (\texttt{.map},
-\texttt{.then}) is sometimes convenient, but often it is not. However, one
-simple macro can change the situation. \texttt{try!(expr)} evaluates the
-\texttt{expr}, which is of type \texttt{Result<T, E>}\footnote{\texttt{T} is the
-success, \texttt{E} is the error -- this is different from Haskell.}. If this
-was a success, the value of the macro is simply the associated value. On the
-other hand, if the result was an error, the macro returns from the current
-function with the same error. This exploits the fact that most of the time,
-errors should simply be passed up the call stack, but the possible sources of
-errors are still explicitly marked. In effect, we gain the comfort of
-language-level exceptions without their drawbacks -- error handling is explicit,
-requires no language support and creates no corner cases (compare with
-\Cplusplus).
+is the preferred way of handling errors in Go. This is also one of the reasons
+why I do not really like Go.} while using the monadic combinators
+(\texttt{.map}, \texttt{.then}) is sometimes convenient, but often it is not.
+However, one simple macro can change the situation. \texttt{try!(expr)}
+evaluates the \texttt{expr}, which is of type \texttt{Result<T,
+E>}\footnote{\texttt{T} is the success, \texttt{E} is the error -- this is
+different from Haskell.}. If it was a success, the value of the macro is simply
+the associated value. On the other hand, if the result was an error, the macro
+returns from the current function with the same error. This exploits the fact
+that most of the time, errors should simply be passed up the call stack, but the
+possible sources of errors are still explicitly marked. In effect, we gain the
+comfort of language-level exceptions without their drawbacks -- error handling
+is explicit, requires no language support and creates no corner cases (compare
+with \Cplusplus). We can also use the monadic combinators when they are
+appropriate.
 
 In fact, Rust also has a form of implicit exceptions, called thread panics. Code
 usually panics when there is a contract violation, for example access out of
@@ -77,3 +78,7 @@ panics cause stack unwinding that causes destructors to run, but cannot be
 caught, so the whole thread is terminated. This policy forces fault isolation
 and tries to avoid most of the problems caused by inconsistent data after an
 exception (remember that a thread cannot share data with other threads).
+
+The implementation assumes that the volume is correctly formatted and there are
+inputs (disk images) that can cause the library to crash. Real-world
+implementation should definitely be more hardened.
