@@ -30,7 +30,9 @@ impl Filesystem {
   }
 
   pub fn group_count(&self) -> u64 {
-    self.superblock.blocks_count as u64 / self.superblock.blocks_per_group as u64
+    let a = self.superblock.blocks_count as u64;
+    let b = self.superblock.blocks_per_group as u64;
+    (a + b - 1) / b
   }
 }
 
