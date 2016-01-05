@@ -10,21 +10,21 @@ pub fn decode_superblock(bytes: &[u8], read_only: bool) -> Result<Superblock> {
   let feature_incompat = if rev >= 1 { decode_u32(&bytes[96..]) } else { 0 };
   let feature_ro_compat = if rev >= 1 { decode_u32(&bytes[100..]) } else { 0 };
 
-  if magic != Superblock::MAGIC {
+  if magic != SUPERBLOCK_MAGIC {
     return Err(Error::new(
-        format!("Bad magic 0x{:x}, expected 0x{:x}", magic, Superblock::MAGIC)));
+        format!("Bad magic 0x{:x}, expected 0x{:x}", magic, SUPERBLOCK_MAGIC)));
   }
 
   if state != 1 {
     return Err(Error::new(format!("Volume is in an invalid state (0x{:x})", state)));
   }
 
-  if (feature_incompat & !Superblock::SUPPORTED_INCOMPAT) != 0 {
+  if (feature_incompat & !SUPPORTED_INCOMPAT_FEATURES) != 0 {
     return Err(Error::new(format!("Volume uses incompatible features (0x{:x})",
             feature_incompat)));
   }
 
-  if !read_only && (feature_ro_compat & !Superblock::SUPPORTED_RO_COMPAT) != 0 {
+  if !read_only && (feature_ro_compat & !SUPPORTED_RO_COMPAT_FEATURES) != 0 {
     return Err(Error::new(format!(
             "Volume uses incompatible features, only reading is possible (0x{:x})",
             feature_ro_compat)));

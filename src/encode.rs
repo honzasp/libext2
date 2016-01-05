@@ -8,7 +8,7 @@ pub fn encode_superblock(superblock: &Superblock, bytes: &mut [u8]) -> Result<()
   encode_u32(superblock.log_block_size, &mut bytes[24..]);
   encode_u32(superblock.blocks_per_group, &mut bytes[32..]);
   encode_u32(superblock.inodes_per_group, &mut bytes[40..]);
-  encode_u16(Superblock::MAGIC, &mut bytes[56..]);
+  encode_u16(SUPERBLOCK_MAGIC, &mut bytes[56..]);
   encode_u16(superblock.state, &mut bytes[58..]);
   encode_u32(superblock.rev_level, &mut bytes[76..]);
 

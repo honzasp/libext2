@@ -6,7 +6,32 @@ extern crate time;
 use std::{error, fs, iter, path};
 use std::collections::{HashMap};
 use std::os::unix::ffi::{OsStrExt};
-use std::ffi::{OsStr};
+use std::ffi::{OsStr, OsString};
+
+fn main() {
+  use std::env;
+  let default_ext2_file = From::from("test.ext2");
+  let default_mount_point = From::from("/tmp/test");
+
+  let argv: Vec<_> = env::args_os().collect();
+  let ext2_file = argv.get(1).unwrap_or(&default_ext2_file);
+  let mount_point = argv.get(2).unwrap_or(&default_mount_point);
+  
+  match fuse_main(ext2_file, mount_point) {
+    Ok(()) => {},
+    Err(err) => print_error(&err),
+  }
+}
+
+fn fuse_main(ext2_file: &OsString, mount_point: &OsString) -> Result<(), ext2::Error> {
+  let file = try!(fs::OpenOptions::new()
+      .read(true).write(true).open(ext2_file));
+  let volume = ext2::FileVolume(file);
+  let fs = try!(ext2::mount_fs(Box::new(volume)));
+  let fuse = Fuse::new(fs);
+  fuse::mount(fuse, mount_point, &[]);
+  Ok(())
+}
 
 struct Fuse {
   fs: ext2::Filesystem,
@@ -334,23 +359,6 @@ impl fuse::Filesystem for Fuse {
   }
 }
 
-fn mein() -> Result<(), ext2::Error> {
-  let file = try!(fs::OpenOptions::new()
-      .read(true).write(true).open("test.ext2"));
-  let volume = ext2::FileVolume(file);
-  let fs = try!(ext2::mount_fs(Box::new(volume)));
-  let fuse = Fuse::new(fs);
-  fuse::mount(fuse, &"/tmp/test", &[]);
-  Ok(())
-}
-
-fn main() {
-  match mein() {
-    Ok(()) => {},
-    Err(err) => print_error(&err),
-  }
-}
-
 fn print_error(err: &error::Error) {
   println!("Error: {}", err);
   match err.cause() {
@@ -360,7 +368,7 @@ fn print_error(err: &error::Error) {
 }
 
 fn ext2_ino(fuse_ino: u64) -> u64 {
-  if fuse_ino == 1 { ext2::Filesystem::ROOT_INO } else { fuse_ino }
+  if fuse_ino == 1 { ext2::ROOT_INO } else { fuse_ino }
 }
 
 fn ext2_mode(mode: u16) -> Result<ext2::Mode, ext2::Error> {
@@ -368,7 +376,7 @@ fn ext2_mode(mode: u16) -> Result<ext2::Mode, ext2::Error> {
 }
 
 fn fuse_ino(ext2_ino: u64) -> u64 {
-  if ext2_ino == ext2::Filesystem::ROOT_INO { 1 } else { ext2_ino }
+  if ext2_ino == ext2::ROOT_INO { 1 } else { ext2_ino }
 }
 
 fn inode_to_file_attr(inode: &ext2::Inode) -> fuse::FileAttr {

@@ -22,9 +22,9 @@ pub struct Group {
   pub dirty: bool,
 }
 
-impl Filesystem {
-  pub const ROOT_INO: u64 = 2;
+pub const ROOT_INO: u64 = 2;
 
+impl Filesystem {
   pub fn block_size(&self) -> u64 {
     1024 << self.superblock.log_block_size 
   }
