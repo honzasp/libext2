@@ -1,6 +1,8 @@
 # libext2
 
-This is a school project
+This is a school project to programming. It is not intended for serious use.
+There is a serious risk of data loss if you use it on a real volume with
+important data.
 
 ## Build requirements
 
@@ -29,5 +31,10 @@ It will use `<ext2-file>` as the volume (I strongly suggest using a regular file
 `<mount-point>` (it will fail if the mount point does not exist). The process
 will exit once the filesystem is unmounted, either using `umount` or `fusermount
 -u`. Killing or terminating the process will not unmount the filesystem.
+
+An empty filesystem can be created using
+
+    head -c <filesystem-size> >filesystem.ext2
+    mkfs -t ext2 filesystem.ext2
 
 [rust]: https://www.rust-lang.org/downloads.html
